@@ -31,8 +31,8 @@ const FormularioPessoa = ({
     observacao: '',
     senha: '',
     data_admissao: new Date().toISOString().split('T')[0],
-    horario_entrada: '08:00',
-    horario_saida: '17:00',
+    horario_entrada: '06:00',
+    horario_saida: '20:00',
     status: 'ativo'
   });
 
