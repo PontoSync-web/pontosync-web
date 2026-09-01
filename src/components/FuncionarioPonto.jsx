@@ -1,6 +1,7 @@
  import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { enviarSMS, formatarReciboPonto, verificarFerias } from '../lib/sms';
+import { buscarBancoHoras, atualizarBancoHoras, calcularSaldoAcumulado } from '../lib/bancoHoras';
 import toast from 'react-hot-toast';
 
 const FuncionarioPonto = () => {
@@ -11,31 +12,23 @@ const FuncionarioPonto = () => {
   const [localizacao, setLocalizacao] = useState(null);
   const [infoFerias, setInfoFerias] = useState(null);
   const [admin, setAdmin] = useState(null);
+  const [bancoHoras, setBancoHoras] = useState(null);
+  const [saldoAcumulado, setSaldoAcumulado] = useState(0);
+
+  const HORARIO_INICIO = 6;
+  const HORARIO_FIM = 20;
 
   // ============================================================
-  // CONFIGURAÇÕES DE HORÁRIO
+  // VERIFICAR HORÁRIO PERMITIDO
   // ============================================================
-  const HORARIO_INICIO = 6;  // 06:00
-  const HORARIO_FIM = 20;    // 20:00
-
   const verificarHorarioPermitido = () => {
     const agora = new Date();
     const hora = agora.getHours();
-    const minuto = agora.getMinutes();
-    
-    // Verifica se está dentro do horário permitido (06:00 às 20:00)
-    if (hora < HORARIO_INICIO || hora >= HORARIO_FIM) {
-      return {
-        permitido: false,
-        mensagem: `⏰ O ponto só pode ser registrado das ${String(HORARIO_INICIO).padStart(2, '0')}:00 às ${String(HORARIO_FIM).padStart(2, '0')}:00.`
-      };
-    }
-    
-    return { permitido: true };
+    return hora >= HORARIO_INICIO && hora < HORARIO_FIM;
   };
 
   // ============================================================
-  // BUSCAR ADMINISTRADOR
+  // BUSCAR ADMIN
   // ============================================================
   const buscarAdmin = async () => {
     try {
@@ -46,9 +39,7 @@ const FuncionarioPonto = () => {
         .limit(1);
 
       if (error) throw error;
-      if (data && data.length > 0) {
-        setAdmin(data[0]);
-      }
+      if (data && data.length > 0) setAdmin(data[0]);
     } catch (error) {
       console.error('❌ Erro ao buscar admin:', error);
     }
@@ -58,12 +49,7 @@ const FuncionarioPonto = () => {
     buscarAdmin();
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLocalizacao({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude
-          });
-        },
+        (pos) => setLocalizacao({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         () => console.log('Geolocalização não autorizada')
       );
     }
@@ -98,7 +84,15 @@ const FuncionarioPonto = () => {
       const ferias = verificarFerias(data);
       setInfoFerias(ferias);
 
-      // Verifica se já bateu ponto hoje
+      // Busca banco de horas
+      const banco = await buscarBancoHoras(data.id);
+      setBancoHoras(banco);
+
+      // Calcula saldo acumulado
+      const saldo = await calcularSaldoAcumulado(data.id);
+      setSaldoAcumulado(saldo);
+
+      // Verifica registros de hoje
       const hoje = new Date().toISOString().split('T')[0];
       const { data: registros } = await supabase
         .from('registros_ponto')
@@ -120,7 +114,7 @@ const FuncionarioPonto = () => {
   };
 
   // ============================================================
-  // REGISTRAR PONTO (COM VALIDAÇÃO DE HORÁRIO)
+  // REGISTRAR PONTO
   // ============================================================
   const registrarPonto = async (tipo) => {
     if (!funcionario) {
@@ -128,16 +122,15 @@ const FuncionarioPonto = () => {
       return;
     }
 
-    // VERIFICA HORÁRIO PERMITIDO
-    const horario = verificarHorarioPermitido();
-    if (!horario.permitido) {
-      toast.error(horario.mensagem);
+    // Verifica horário
+    if (!verificarHorarioPermitido()) {
+      toast.error(`⏰ Ponto permitido apenas das 06:00 às 20:00.`);
       return;
     }
 
-    // VERIFICA FÉRIAS
+    // Verifica férias
     if (infoFerias?.emFerias) {
-      toast.error(`🚫 Funcionário em gozo de férias até ${new Date(infoFerias.fim).toLocaleDateString('pt-BR')}. Não é possível bater ponto.`);
+      toast.error(`🚫 Funcionário em férias até ${new Date(infoFerias.fim).toLocaleDateString('pt-BR')}`);
       return;
     }
 
@@ -182,11 +175,21 @@ const FuncionarioPonto = () => {
 
       setRegistroAtual(data);
 
+      // ============================================================
+      // ATUALIZA BANCO DE HORAS
+      // ============================================================
+      const cargaHoraria = parseFloat(funcionario.carga_horaria) || 8;
+      const bancoAtualizado = await atualizarBancoHoras(funcionario.id, cargaHoraria);
+      if (bancoAtualizado) {
+        setBancoHoras(bancoAtualizado);
+        const saldo = await calcularSaldoAcumulado(funcionario.id);
+        setSaldoAcumulado(saldo);
+      }
+
       // Envia SMS recibo
       const agora = new Date();
       const recibo = formatarReciboPonto(funcionario, tipo, agora, localizacao);
 
-      // Envia para o funcionário
       if (funcionario.telefone) {
         await enviarSMS(
           funcionario.telefone,
@@ -198,7 +201,6 @@ const FuncionarioPonto = () => {
         );
       }
 
-      // Envia para o administrador
       if (admin?.telefone) {
         await enviarSMS(
           admin.telefone,
@@ -210,9 +212,7 @@ const FuncionarioPonto = () => {
         );
       }
 
-      toast.success(`✅ ${tipo.toUpperCase()} registrada! SMS enviado.`);
-      
-      // Gera cartão visual
+      toast.success(`✅ ${tipo.toUpperCase()} registrada!`);
       gerarCartaoPonto(funcionario, tipo, agora);
 
     } catch (error) {
@@ -232,23 +232,46 @@ const FuncionarioPonto = () => {
     const cartao = document.createElement('div');
     cartao.className = 'fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50';
     cartao.innerHTML = `
-      <div class="bg-gray-800 p-8 rounded-2xl max-w-md w-full border border-blue-500 shadow-2xl">
+      <div class="bg-gray-800 p-8 rounded-2xl max-w-md w-full border border-blue-500 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="text-center mb-4">
           <h2 class="text-2xl font-bold text-blue-400">🏢 PONTO SYNC</h2>
           <p class="text-gray-400 text-sm">Comprovante de Ponto</p>
-          <p class="text-gray-500 text-xs">Central de Mandados</p>
         </div>
-        <div class="border-t border-gray-600 pt-4">
+        <div class="border-t border-gray-600 pt-4 space-y-1">
           <p class="text-white"><strong>Funcionário:</strong> ${func.nome}</p>
           <p class="text-white"><strong>Matrícula:</strong> ${func.matricula}</p>
           <p class="text-white"><strong>Cargo:</strong> ${func.cargo}</p>
+          <p class="text-white"><strong>Carga Horária:</strong> ${func.carga_horaria || 8}h</p>
           <p class="text-white"><strong>Data:</strong> ${data}</p>
           <p class="text-${tipo === 'entrada' ? 'green' : 'red'}-400 text-2xl font-bold">
-            <strong>${tipo.toUpperCase()}:</strong> ${horario}
+            ${tipo.toUpperCase()}: ${horario}
           </p>
           ${localizacao ? `<p class="text-gray-400 text-xs">📍 ${localizacao.lat.toFixed(6)}, ${localizacao.lng.toFixed(6)}</p>` : ''}
           <p class="text-gray-500 text-xs mt-2">Código: ${func.matricula}-${Date.now()}</p>
-          <p class="text-gray-500 text-xs">Horário permitido: 06:00 às 20:00</p>
+          
+          <!-- Banco de Horas -->
+          ${bancoHoras ? `
+            <div class="mt-4 pt-4 border-t border-gray-700">
+              <p class="text-gray-400 text-sm font-semibold">📊 Banco de Horas - ${bancoHoras.mes_ano}</p>
+              <div class="grid grid-cols-3 gap-2 text-xs mt-2">
+                <div class="bg-gray-700 p-2 rounded text-center">
+                  <p class="text-gray-400">Trabalhadas</p>
+                  <p class="text-white font-bold">${bancoHoras.horas_trabalhadas || 0}h</p>
+                </div>
+                <div class="bg-green-900 p-2 rounded text-center">
+                  <p class="text-gray-400">Excedentes</p>
+                  <p class="text-green-400 font-bold">${bancoHoras.horas_excedentes || 0}h</p>
+                </div>
+                <div class="bg-red-900 p-2 rounded text-center">
+                  <p class="text-gray-400">Débito</p>
+                  <p class="text-red-400 font-bold">${bancoHoras.horas_debito || 0}h</p>
+                </div>
+              </div>
+              <p class="text-center text-sm mt-2 ${saldoAcumulado >= 0 ? 'text-green-400' : 'text-red-400'}">
+                Saldo acumulado: ${saldoAcumulado >= 0 ? '+' : ''}${saldoAcumulado || 0}h
+              </p>
+            </div>
+          ` : ''}
         </div>
         <button onclick="this.closest('.fixed').remove()" 
                 class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
@@ -260,7 +283,7 @@ const FuncionarioPonto = () => {
     
     setTimeout(() => {
       if (cartao.parentNode) cartao.remove();
-    }, 15000);
+    }, 20000);
   };
 
   // ============================================================
@@ -275,16 +298,16 @@ const FuncionarioPonto = () => {
 
       {/* Status do horário */}
       <div className={`p-2 rounded-lg mb-4 text-center text-sm ${
-        horarioStatus.permitido ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+        horarioStatus ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
       }`}>
-        {horarioStatus.permitido ? '✅ Horário permitido para bater ponto' : '⏰ Fora do horário permitido (06:00 - 20:00)'}
+        {horarioStatus ? '✅ Horário permitido para bater ponto' : '⏰ Fora do horário permitido'}
       </div>
 
-      {/* Buscar funcionário */}
+      {/* Busca */}
       <div className="flex gap-2 mb-6">
         <input
           type="text"
-          placeholder="Digite a matrícula (ex: ORION-0001)"
+          placeholder="Digite a matrícula"
           value={matricula}
           onChange={(e) => setMatricula(e.target.value.toUpperCase())}
           className="flex-1 bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -312,14 +335,36 @@ const FuncionarioPonto = () => {
               <p className="text-white font-semibold text-lg">{funcionario.nome}</p>
               <p className="text-gray-400 text-sm">{funcionario.cargo} - {funcionario.funcao}</p>
               <p className="text-gray-500 text-xs">Matrícula: {funcionario.matricula}</p>
+              <p className="text-gray-500 text-xs">Carga: {funcionario.carga_horaria || 8}h</p>
               {infoFerias?.emFerias && (
-                <p className="text-yellow-400 text-xs font-bold">🚫 EM FÉRIAS até {new Date(infoFerias.fim).toLocaleDateString('pt-BR')}</p>
-              )}
-              {!horarioStatus.permitido && (
-                <p className="text-red-400 text-xs font-bold">⏰ Fora do horário permitido</p>
+                <p className="text-yellow-400 text-xs font-bold">🚫 EM FÉRIAS</p>
               )}
             </div>
           </div>
+
+          {/* Banco de Horas */}
+          {bancoHoras && (
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <p className="text-gray-400 text-sm font-semibold">📊 Banco de Horas - {bancoHoras.mes_ano}</p>
+              <div className="grid grid-cols-3 gap-2 text-xs mt-2">
+                <div className="bg-gray-700 p-2 rounded text-center">
+                  <p className="text-gray-400">Trabalhadas</p>
+                  <p className="text-white font-bold">{bancoHoras.horas_trabalhadas || 0}h</p>
+                </div>
+                <div className="bg-green-900 p-2 rounded text-center">
+                  <p className="text-gray-400">Excedentes</p>
+                  <p className="text-green-400 font-bold">{bancoHoras.horas_excedentes || 0}h</p>
+                </div>
+                <div className="bg-red-900 p-2 rounded text-center">
+                  <p className="text-gray-400">Débito</p>
+                  <p className="text-red-400 font-bold">{bancoHoras.horas_debito || 0}h</p>
+                </div>
+              </div>
+              <p className={`text-center text-sm mt-2 ${saldoAcumulado >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                Saldo acumulado: {saldoAcumulado >= 0 ? '+' : ''}{saldoAcumulado || 0}h
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -328,9 +373,9 @@ const FuncionarioPonto = () => {
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => registrarPonto('entrada')}
-            disabled={loading || infoFerias?.emFerias || registroAtual?.tipo === 'entrada' || !horarioStatus.permitido}
+            disabled={loading || infoFerias?.emFerias || registroAtual?.tipo === 'entrada' || !horarioStatus}
             className={`p-4 rounded-lg font-bold transition ${
-              loading || infoFerias?.emFerias || registroAtual?.tipo === 'entrada' || !horarioStatus.permitido
+              loading || infoFerias?.emFerias || registroAtual?.tipo === 'entrada' || !horarioStatus
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
                 : 'bg-green-600 hover:bg-green-700 text-white'
             }`}
@@ -339,9 +384,9 @@ const FuncionarioPonto = () => {
           </button>
           <button
             onClick={() => registrarPonto('saida')}
-            disabled={loading || infoFerias?.emFerias || !registroAtual || registroAtual?.tipo === 'saida' || !horarioStatus.permitido}
+            disabled={loading || infoFerias?.emFerias || !registroAtual || registroAtual?.tipo === 'saida' || !horarioStatus}
             className={`p-4 rounded-lg font-bold transition ${
-              loading || infoFerias?.emFerias || !registroAtual || registroAtual?.tipo === 'saida' || !horarioStatus.permitido
+              loading || infoFerias?.emFerias || !registroAtual || registroAtual?.tipo === 'saida' || !horarioStatus
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
                 : 'bg-red-600 hover:bg-red-700 text-white'
             }`}
@@ -351,7 +396,7 @@ const FuncionarioPonto = () => {
         </div>
       )}
 
-      {/* Status do último registro */}
+      {/* Último registro */}
       {registroAtual && (
         <div className="mt-4 bg-gray-700 p-3 rounded-lg text-center">
           <p className="text-gray-300 text-sm">
