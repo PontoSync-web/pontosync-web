@@ -1,41 +1,28 @@
  import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
-  PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer, 
-  Legend 
-} from 'recharts';
-import FormularioPessoa from './FormularioPessoa';
-import { gerarMatricula } from '../lib/supabase';
-import { enviarSMS, formatarReciboCadastro } from '../lib/sms';
+import { enviarSMS, formatarReciboPonto, verificarFerias } from '../lib/sms';
+import { buscarBancoHoras, atualizarBancoHoras, calcularSaldoAcumulado } from '../lib/bancoHoras';
 import toast from 'react-hot-toast';
 
-const AdminDashboard = () => {
-  const [stats, setStats] = useState({
-    totalFuncionarios: 0,
-    presentesHoje: 0,
-    atrasos: 0,
-    faltas: 0,
-    horasExtras: 0,
-    frequenciaMensal: [],
-    distribuicaoCargos: [],
-    absenteismo: [],
-    totalBancoHoras: 0,
-    totalExcedentes: 0,
-    totalDebito: 0,
-    bancoHorasMensal: []
-  });
-  const [loading, setLoading] = useState(true);
-  const [feedbacks, setFeedbacks] = useState([]);
-  const [showModalFuncionario, setShowModalFuncionario] = useState(false);
-  const [loadingCadastro, setLoadingCadastro] = useState(false);
+const FuncionarioPonto = () => {
+  const [matricula, setMatricula] = useState('');
+  const [funcionario, setFuncionario] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [registroAtual, setRegistroAtual] = useState(null);
+  const [localizacao, setLocalizacao] = useState(null);
+  const [infoFerias, setInfoFerias] = useState(null);
   const [admin, setAdmin] = useState(null);
+  const [bancoHoras, setBancoHoras] = useState(null);
+  const [saldoAcumulado, setSaldoAcumulado] = useState(0);
 
-  useEffect(() => {
-    carregarDashboard();
-    inscreverFeed();
-    buscarAdmin();
-  }, []);
+  const HORARIO_INICIO = 6;
+  const HORARIO_FIM = 20;
+
+  const verificarHorarioPermitido = () => {
+    const agora = new Date();
+    const hora = agora.getHours();
+    return hora >= HORARIO_INICIO && hora < HORARIO_FIM;
+  };
 
   const buscarAdmin = async () => {
     try {
@@ -46,55 +33,148 @@ const AdminDashboard = () => {
         .limit(1);
 
       if (error) throw error;
-      if (data && data.length > 0) {
-        setAdmin(data[0]);
-        localStorage.setItem('adminId', data[0].id);
-        localStorage.setItem('adminNome', data[0].nome);
-      }
+      if (data && data.length > 0) setAdmin(data[0]);
     } catch (error) {
       console.error('❌ Erro ao buscar admin:', error);
     }
   };
 
-  const cadastrarFuncionario = async (dados) => {
-    setLoadingCadastro(true);
-    try {
-      const funcionarioData = {
-        ...dados,
-        matricula: dados.matricula || gerarMatricula(),
-        data_admissao: dados.data_admissao || new Date().toISOString().split('T')[0],
-        horario_entrada: dados.turno === 'matutino' ? '08:00' : dados.turno === 'vespertino' ? '14:00' : '22:00',
-        horario_saida: dados.turno === 'matutino' ? '17:00' : dados.turno === 'vespertino' ? '22:00' : '06:00',
-        senha: dados.senha || '123456',
-        status: 'ativo'
-      };
+  useEffect(() => {
+    buscarAdmin();
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setLocalizacao({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => console.log('Geolocalização não autorizada')
+      );
+    }
+  }, []);
 
+  const buscarFuncionario = async () => {
+    if (!matricula.trim()) {
+      toast.error('Digite a matrícula');
+      return;
+    }
+
+    setLoading(true);
+    try {
       const { data, error } = await supabase
         .from('funcionarios')
-        .insert([funcionarioData])
-        .select();
+        .select('*')
+        .eq('matricula', matricula)
+        .single();
 
-      if (error) {
-        if (error.code === '23505') {
-          toast.error('CPF ou matrícula já cadastrados');
-        } else {
-          throw error;
-        }
+      if (error || !data) {
+        toast.error('Funcionário não encontrado');
+        setFuncionario(null);
         return;
       }
 
-      const novoFuncionario = data[0];
-      const adminNome = admin?.nome || 'Sistema';
-      const recibo = formatarReciboCadastro(novoFuncionario, 'funcionario', adminNome);
+      setFuncionario(data);
 
-      if (novoFuncionario.telefone) {
+      const ferias = verificarFerias(data);
+      setInfoFerias(ferias);
+
+      const banco = await buscarBancoHoras(data.id);
+      setBancoHoras(banco);
+
+      const saldo = await calcularSaldoAcumulado(data.id);
+      setSaldoAcumulado(saldo);
+
+      const hoje = new Date().toISOString().split('T')[0];
+      const { data: registros } = await supabase
+        .from('registros_ponto')
+        .select('*')
+        .eq('funcionario_id', data.id)
+        .gte('timestamp', hoje)
+        .order('timestamp', { ascending: false });
+
+      if (registros && registros.length > 0) {
+        setRegistroAtual(registros[0]);
+      }
+
+      toast.success(`Bem-vindo, ${data.nome}!`);
+    } catch (error) {
+      toast.error('Erro ao buscar funcionário');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registrarPonto = async (tipo) => {
+    if (!funcionario) {
+      toast.error('Funcionário não identificado');
+      return;
+    }
+
+    if (!verificarHorarioPermitido()) {
+      toast.error(`⏰ Ponto permitido apenas das 06:00 às 20:00.`);
+      return;
+    }
+
+    if (infoFerias?.emFerias) {
+      toast.error(`🚫 Funcionário em férias até ${new Date(infoFerias.fim).toLocaleDateString('pt-BR')}`);
+      return;
+    }
+
+    const hoje = new Date().toISOString().split('T')[0];
+    const { data: registros } = await supabase
+      .from('registros_ponto')
+      .select('*')
+      .eq('funcionario_id', funcionario.id)
+      .gte('timestamp', hoje);
+
+    const ultimoTipo = registros?.length > 0 ? registros[registros.length - 1].tipo : null;
+    
+    if (tipo === 'entrada' && ultimoTipo === 'entrada') {
+      toast.error('Você já registrou entrada hoje');
+      return;
+    }
+
+    if (tipo === 'saida' && ultimoTipo !== 'entrada') {
+      toast.error('Você precisa registrar a entrada primeiro');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const codigo = `${funcionario.matricula}-${Date.now()}`;
+      
+      const { data, error } = await supabase
+        .from('registros_ponto')
+        .insert({
+          funcionario_id: funcionario.id,
+          matricula: funcionario.matricula,
+          tipo: tipo,
+          lat: localizacao?.lat || null,
+          lng: localizacao?.lng || null,
+          codigo: codigo
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setRegistroAtual(data);
+
+      const cargaHoraria = parseFloat(funcionario.carga_horaria) || 8;
+      const bancoAtualizado = await atualizarBancoHoras(funcionario.id, cargaHoraria);
+      if (bancoAtualizado) {
+        setBancoHoras(bancoAtualizado);
+        const saldo = await calcularSaldoAcumulado(funcionario.id);
+        setSaldoAcumulado(saldo);
+      }
+
+      const agora = new Date();
+      const recibo = formatarReciboPonto(funcionario, tipo, agora, localizacao);
+
+      if (funcionario.telefone) {
         await enviarSMS(
-          novoFuncionario.telefone,
+          funcionario.telefone,
           recibo,
-          novoFuncionario.matricula,
-          novoFuncionario.id,
+          funcionario.matricula,
+          funcionario.id,
           'funcionario',
-          novoFuncionario.nome
+          funcionario.nome
         );
       }
 
@@ -102,307 +182,203 @@ const AdminDashboard = () => {
         await enviarSMS(
           admin.telefone,
           recibo,
-          novoFuncionario.matricula,
+          funcionario.matricula,
           admin.id,
           'admin',
           admin.nome
         );
       }
 
-      toast.success(`✅ Funcionário ${dados.nome} cadastrado! SMS enviado.`);
-      setShowModalFuncionario(false);
-      carregarDashboard();
-    } catch (error) {
-      console.error('❌ Erro ao cadastrar funcionário:', error);
-      toast.error('Erro ao cadastrar funcionário');
-    } finally {
-      setLoadingCadastro(false);
-    }
-  };
-
-  const carregarDashboard = async () => {
-    try {
-      const { count: total } = await supabase
-        .from('funcionarios')
-        .select('*', { count: 'exact', head: true });
-
-      const hoje = new Date().toISOString().split('T')[0];
-      const { data: registrosHoje } = await supabase
-        .from('registros_ponto')
-        .select('*')
-        .gte('timestamp', hoje);
-
-      const presentes = new Set(registrosHoje?.map(r => r.funcionario_id) || []);
-
-      const { data: funcionarios } = await supabase
-        .from('funcionarios')
-        .select('cargo, funcao, setor, carga_horaria');
-
-      const cargos = {};
-      funcionarios?.forEach(f => {
-        cargos[f.cargo] = (cargos[f.cargo] || 0) + 1;
-      });
-
-      const { data: bancoHoras, error: bancoError } = await supabase
-        .from('banco_horas')
-        .select('saldo, horas_excedentes, horas_debito, mes_ano');
-
-      if (bancoError) console.error('❌ Erro banco horas:', bancoError);
-
-      const totalBancoHoras = bancoHoras?.reduce((acc, item) => acc + (item.saldo || 0), 0) || 0;
-      const totalExcedentes = bancoHoras?.reduce((acc, item) => acc + (item.horas_excedentes || 0), 0) || 0;
-      const totalDebito = bancoHoras?.reduce((acc, item) => acc + (item.horas_debito || 0), 0) || 0;
-
-      const bancoPorMes = {};
-      bancoHoras?.forEach(item => {
-        if (!bancoPorMes[item.mes_ano]) {
-          bancoPorMes[item.mes_ano] = { mes: item.mes_ano, saldo: 0, excedentes: 0, debito: 0 };
-        }
-        bancoPorMes[item.mes_ano].saldo += (item.saldo || 0);
-        bancoPorMes[item.mes_ano].excedentes += (item.horas_excedentes || 0);
-        bancoPorMes[item.mes_ano].debito += (item.horas_debito || 0);
-      });
-
-      const bancoHorasMensal = Object.values(bancoPorMes).sort((a, b) => a.mes.localeCompare(b.mes));
-
-      const { data: ultimosRegistros } = await supabase
-        .from('registros_ponto')
-        .select(`
-          *,
-          funcionarios (nome, matricula, cargo)
-        `)
-        .order('timestamp', { ascending: false })
-        .limit(5);
-
-      setFeedbacks(ultimosRegistros || []);
-
-      setStats({
-        totalFuncionarios: total || 0,
-        presentesHoje: presentes.size,
-        atrasos: 0,
-        faltas: 0,
-        horasExtras: 0,
-        frequenciaMensal: gerarDadosFrequencia(),
-        distribuicaoCargos: Object.entries(cargos).map(([name, value]) => ({ name, value })),
-        absenteismo: gerarDadosAbsenteismo(),
-        totalBancoHoras: Math.round(totalBancoHoras * 100) / 100,
-        totalExcedentes: Math.round(totalExcedentes * 100) / 100,
-        totalDebito: Math.round(totalDebito * 100) / 100,
-        bancoHorasMensal: bancoHorasMensal
-      });
+      toast.success(`✅ ${tipo.toUpperCase()} registrada!`);
+      gerarCartaoPonto(funcionario, tipo, agora);
 
     } catch (error) {
-      console.error('Erro ao carregar dashboard:', error);
+      toast.error('Erro ao registrar ponto');
     } finally {
       setLoading(false);
     }
   };
 
-  const inscreverFeed = () => {
-    const canal = supabase
-      .channel('feed-ponto')
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'registros_ponto' },
-        () => carregarDashboard()
-      )
-      .subscribe();
-    return () => canal.unsubscribe();
-  };
-
-  const gerarDadosFrequencia = () => {
-    const dias = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
-    return dias.map(dia => ({
-      nome: dia,
-      entradas: Math.floor(Math.random() * 20),
-      saidas: Math.floor(Math.random() * 20)
-    }));
-  };
-
-  const gerarDadosAbsenteismo = () => {
-    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    return meses.map(mes => ({
-      mes: mes,
-      faltas: Math.floor(Math.random() * 5),
-      justificadas: Math.floor(Math.random() * 3)
-    }));
-  };
-
-  const cores = ['#00d4ff', '#ff6b6b', '#ffc107', '#4caf50', '#9c27b0', '#ff9800'];
-
-  const dadosIniciaisFuncionario = {
-    nome: '',
-    foto: null,
-    foto_url: '',
-    cargo: '',
-    setor: '',
-    funcao: '',
-    matricula: gerarMatricula(),
-    turno: 'matutino',
-    carga_horaria: '8',
-    telefone: '',
-    cpf: '',
-    email: '',
-    data_admissao: new Date().toISOString().split('T')[0],
-    periodo_ferias_inicio: '',
-    periodo_ferias_fim: '',
-    observacao: '',
-    senha: '123456'
-  };
-
-  if (loading) {
-    return <div className="text-center text-blue-400 py-10">⏳ Carregando dashboard...</div>;
-  }
-
-  return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-blue-400">📊 Dashboard PontoSync</h1>
-        <button
-          onClick={() => setShowModalFuncionario(true)}
-          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2"
-        >
-          <span className="text-xl">+</span> Novo Funcionário
+  const gerarCartaoPonto = (func, tipo, hora) => {
+    const data = hora.toLocaleDateString('pt-BR');
+    const horario = hora.toLocaleTimeString('pt-BR');
+    
+    const cartao = document.createElement('div');
+    cartao.className = 'fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50';
+    cartao.innerHTML = `
+      <div class="bg-gray-800 p-8 rounded-2xl max-w-md w-full border border-blue-500 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="text-center mb-4">
+          <h2 class="text-2xl font-bold text-blue-400">🏢 PONTO SYNC</h2>
+          <p class="text-gray-400 text-sm">Comprovante de Ponto</p>
+        </div>
+        <div class="border-t border-gray-600 pt-4 space-y-1">
+          <p class="text-white"><strong>Funcionário:</strong> ${func.nome}</p>
+          <p class="text-white"><strong>Matrícula:</strong> ${func.matricula}</p>
+          <p class="text-white"><strong>Cargo:</strong> ${func.cargo}</p>
+          <p class="text-white"><strong>Carga Horária:</strong> ${func.carga_horaria || 8}h</p>
+          <p class="text-white"><strong>Data:</strong> ${data}</p>
+          <p class="text-${tipo === 'entrada' ? 'green' : 'red'}-400 text-2xl font-bold">
+            ${tipo.toUpperCase()}: ${horario}
+          </p>
+          ${localizacao ? `<p class="text-gray-400 text-xs">📍 ${localizacao.lat.toFixed(6)}, ${localizacao.lng.toFixed(6)}</p>` : ''}
+          
+          ${bancoHoras ? `
+            <div class="mt-4 pt-4 border-t border-gray-700">
+              <p class="text-gray-400 text-sm font-semibold">📊 Banco de Horas - ${bancoHoras.mes_ano}</p>
+              <div class="grid grid-cols-3 gap-2 text-xs mt-2">
+                <div class="bg-gray-700 p-2 rounded text-center">
+                  <p class="text-gray-400">Trabalhadas</p>
+                  <p class="text-white font-bold">${bancoHoras.horas_trabalhadas || 0}h</p>
+                </div>
+                <div class="bg-green-900 p-2 rounded text-center">
+                  <p class="text-gray-400">Excedentes</p>
+                  <p class="text-green-400 font-bold">${bancoHoras.horas_excedentes || 0}h</p>
+                </div>
+                <div class="bg-red-900 p-2 rounded text-center">
+                  <p class="text-gray-400">Débito</p>
+                  <p class="text-red-400 font-bold">${bancoHoras.horas_debito || 0}h</p>
+                </div>
+              </div>
+              <p class="text-center text-sm mt-2 ${saldoAcumulado >= 0 ? 'text-green-400' : 'text-red-400'}">
+                Saldo acumulado: ${saldoAcumulado >= 0 ? '+' : ''}${saldoAcumulado || 0}h
+              </p>
+            </div>
+          ` : ''}
+        </div>
+        <button onclick="this.closest('.fixed').remove()" 
+                class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
+          Fechar Comprovante
         </button>
       </div>
-      
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-gray-800 p-4 rounded-lg">
-          <p className="text-gray-400 text-sm">Total Funcionários</p>
-          <p className="text-2xl font-bold text-white">{stats.totalFuncionarios}</p>
-        </div>
-        <div className="bg-green-900 p-4 rounded-lg">
-          <p className="text-gray-400 text-sm">Presentes Hoje</p>
-          <p className="text-2xl font-bold text-green-400">{stats.presentesHoje}</p>
-        </div>
-        <div className="bg-yellow-900 p-4 rounded-lg">
-          <p className="text-gray-400 text-sm">Atrasos</p>
-          <p className="text-2xl font-bold text-yellow-400">{stats.atrasos}</p>
-        </div>
-        <div className="bg-red-900 p-4 rounded-lg">
-          <p className="text-gray-400 text-sm">Faltas</p>
-          <p className="text-2xl font-bold text-red-400">{stats.faltas}</p>
-        </div>
+    `;
+    document.body.appendChild(cartao);
+    
+    setTimeout(() => {
+      if (cartao.parentNode) cartao.remove();
+    }, 20000);
+  };
+
+  const horarioStatus = verificarHorarioPermitido();
+
+  return (
+    <div className="p-4 max-w-md mx-auto">
+      <h1 className="text-2xl font-bold text-blue-400 mb-2">📍 Bater Ponto</h1>
+      <p className="text-gray-400 text-sm mb-4">Central de Mandados • 06:00 às 20:00</p>
+
+      <div className={`p-2 rounded-lg mb-4 text-center text-sm ${
+        horarioStatus ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+      }`}>
+        {horarioStatus ? '✅ Horário permitido para bater ponto' : '⏰ Fora do horário permitido'}
       </div>
 
-      <div className="bg-gray-800 p-4 rounded-lg mb-6 border border-purple-500">
-        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-          📊 Banco de Horas
-          <span className="text-xs text-gray-400">(acumulado geral)</span>
-        </h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <p className="text-gray-400 text-sm">Saldo Total</p>
-            <p className={`text-2xl font-bold ${stats.totalBancoHoras >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {stats.totalBancoHoras >= 0 ? '+' : ''}{stats.totalBancoHoras}h
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-gray-400 text-sm">Horas Excedentes</p>
-            <p className="text-2xl font-bold text-green-400">+{stats.totalExcedentes}h</p>
-          </div>
-          <div className="text-center">
-            <p className="text-gray-400 text-sm">Horas em Débito</p>
-            <p className="text-2xl font-bold text-red-400">-{stats.totalDebito}h</p>
-          </div>
-        </div>
+      <div className="flex gap-2 mb-6">
+        <input
+          type="text"
+          placeholder="Digite sua matrícula"
+          value={matricula}
+          onChange={(e) => setMatricula(e.target.value.toUpperCase())}
+          className="flex-1 bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onKeyDown={(e) => e.key === 'Enter' && buscarFuncionario()}
+        />
+        <button
+          onClick={buscarFuncionario}
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition disabled:opacity-50"
+        >
+          {loading ? '⏳' : '🔍'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="text-white font-semibold mb-4">📈 Frequência Mensal</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={stats.frequenciaMensal}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-              <XAxis dataKey="nome" stroke="#888" />
-              <YAxis stroke="#888" />
-              <Tooltip />
-              <Line type="monotone" dataKey="entradas" stroke="#00d4ff" />
-              <Line type="monotone" dataKey="saidas" stroke="#ff6b6b" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      {funcionario && (
+        <div className="bg-gray-800 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-4">
+            {funcionario.foto_url ? (
+              <img src={funcionario.foto_url} alt={funcionario.nome} className="w-16 h-16 rounded-full object-cover border-2 border-blue-500" />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center text-2xl">👤</div>
+            )}
+            <div>
+              <p className="text-white font-semibold text-lg">{funcionario.nome}</p>
+              <p className="text-gray-400 text-sm">{funcionario.cargo} - {funcionario.funcao}</p>
+              <p className="text-gray-500 text-xs">Matrícula: {funcionario.matricula}</p>
+              {infoFerias?.emFerias && (
+                <p className="text-yellow-400 text-xs font-bold">🚫 EM FÉRIAS</p>
+              )}
+            </div>
+          </div>
 
-        <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="text-white font-semibold mb-4">📊 Distribuição por Cargo</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie
-                data={stats.distribuicaoCargos}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                label
-              >
-                {stats.distribuicaoCargos.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={cores[index % cores.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {stats.bancoHorasMensal && stats.bancoHorasMensal.length > 0 && (
-        <div className="bg-gray-800 p-4 rounded-lg mb-6">
-          <h3 className="text-white font-semibold mb-4">📊 Evolução do Banco de Horas</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={stats.bancoHorasMensal}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-              <XAxis dataKey="mes" stroke="#888" />
-              <YAxis stroke="#888" />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="excedentes" fill="#4caf50" name="Excedentes" />
-              <Bar dataKey="debito" fill="#f44336" name="Débito" />
-            </BarChart>
-          </ResponsiveContainer>
+          {bancoHoras && (
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <p className="text-gray-400 text-sm font-semibold">📊 Banco de Horas - {bancoHoras.mes_ano}</p>
+              <div className="grid grid-cols-3 gap-2 text-xs mt-2">
+                <div className="bg-gray-700 p-2 rounded text-center">
+                  <p className="text-gray-400">Trabalhadas</p>
+                  <p className="text-white font-bold">{bancoHoras.horas_trabalhadas || 0}h</p>
+                </div>
+                <div className="bg-green-900 p-2 rounded text-center">
+                  <p className="text-gray-400">Excedentes</p>
+                  <p className="text-green-400 font-bold">{bancoHoras.horas_excedentes || 0}h</p>
+                </div>
+                <div className="bg-red-900 p-2 rounded text-center">
+                  <p className="text-gray-400">Débito</p>
+                  <p className="text-red-400 font-bold">{bancoHoras.horas_debito || 0}h</p>
+                </div>
+              </div>
+              <p className={`text-center text-sm mt-2 ${saldoAcumulado >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                Saldo acumulado: {saldoAcumulado >= 0 ? '+' : ''}{saldoAcumulado || 0}h
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="bg-gray-800 p-4 rounded-lg">
-        <h3 className="text-white font-semibold mb-4">🔴 Live Feed - Últimas Batidas</h3>
-        <div className="space-y-2 max-h-60 overflow-y-auto">
-          {feedbacks.length === 0 ? (
-            <p className="text-gray-400 text-sm">Aguardando primeiras batidas...</p>
-          ) : (
-            feedbacks.map((item, index) => (
-              <div key={index} className="flex items-center justify-between bg-gray-700 p-2 rounded">
-                <div>
-                  <span className="text-white font-medium">{item.funcionarios?.nome || item.matricula}</span>
-                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
-                    item.tipo === 'entrada' ? 'bg-green-600' : 'bg-red-600'
-                  }`}>
-                    {item.tipo.toUpperCase()}
-                  </span>
-                </div>
-                <span className="text-gray-400 text-sm">
-                  {new Date(item.timestamp).toLocaleTimeString('pt-BR')}
-                </span>
-              </div>
-            ))
-          )}
+      {funcionario && (
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => registrarPonto('entrada')}
+            disabled={loading || infoFerias?.emFerias || registroAtual?.tipo === 'entrada' || !horarioStatus}
+            className={`p-4 rounded-lg font-bold transition ${
+              loading || infoFerias?.emFerias || registroAtual?.tipo === 'entrada' || !horarioStatus
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                : 'bg-green-600 hover:bg-green-700 text-white'
+            }`}
+          >
+            ✅ ENTRADA
+          </button>
+          <button
+            onClick={() => registrarPonto('saida')}
+            disabled={loading || infoFerias?.emFerias || !registroAtual || registroAtual?.tipo === 'saida' || !horarioStatus}
+            className={`p-4 rounded-lg font-bold transition ${
+              loading || infoFerias?.emFerias || !registroAtual || registroAtual?.tipo === 'saida' || !horarioStatus
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
+          >
+            🚪 SAÍDA
+          </button>
         </div>
-      </div>
+      )}
 
-      {showModalFuncionario && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-blue-400 mb-4">📝 Novo Funcionário</h2>
-            <FormularioPessoa
-              tipo="funcionario"
-              dadosIniciais={dadosIniciaisFuncionario}
-              onSubmit={cadastrarFuncionario}
-              onCancel={() => setShowModalFuncionario(false)}
-              loading={loadingCadastro}
-            />
-          </div>
+      {registroAtual && (
+        <div className="mt-4 bg-gray-700 p-3 rounded-lg text-center">
+          <p className="text-gray-300 text-sm">
+            Última batida: <span className="text-white font-semibold">
+              {new Date(registroAtual.timestamp).toLocaleTimeString('pt-BR')}
+            </span>
+          </p>
+          <p className={`text-sm ${registroAtual.tipo === 'entrada' ? 'text-green-400' : 'text-red-400'}`}>
+            {registroAtual.tipo.toUpperCase()} registrada
+          </p>
         </div>
+      )}
+
+      {localizacao && (
+        <p className="text-gray-500 text-xs mt-2 text-center">
+          📍 {localizacao.lat.toFixed(6)}, {localizacao.lng.toFixed(6)}
+        </p>
       )}
     </div>
   );
 };
 
-export default AdminDashboard;
+export default FuncionarioPonto;
