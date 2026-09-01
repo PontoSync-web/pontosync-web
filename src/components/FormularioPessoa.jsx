@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+ import React, { useState } from 'react';
 import { formatarCPF, formatarTelefone, validarCPF, validarTelefone, validarEmail, validarSenha, validarCamposObrigatorios } from '../utils/validators';
 
 const FormularioPessoa = ({ 
-  tipo, // 'admin' ou 'funcionario'
+  tipo,
   dadosIniciais,
   onSubmit,
   onCancel,
@@ -10,9 +10,6 @@ const FormularioPessoa = ({
   erros: errosExternos,
   setErros: setErrosExternos
 }) => {
-  // ============================================================
-  // DADOS DO FORMULÁRIO
-  // ============================================================
   const [form, setForm] = useState(dadosIniciais || {
     nome: '',
     foto: null,
@@ -31,24 +28,40 @@ const FormularioPessoa = ({
     observacao: '',
     senha: '',
     data_admissao: new Date().toISOString().split('T')[0],
-    horario_entrada: '06:00',
-    horario_saida: '20:00',
+    horario_entrada: '08:00',
+    horario_saida: '17:00',
     status: 'ativo'
   });
 
   const [erros, setErros] = useState(errosExternos || {});
 
   // ============================================================
-  // OPÇÕES PARA SELECTS
+  // OPÇÕES PARA SELECTS (COM NOVOS CARGOS)
   // ============================================================
   const turnos = ['matutino', 'vespertino', 'noturno'];
   const cargasHorarias = ['6', '8'];
-  const cargos = ['Analista', 'Desenvolvedor', 'Gerente', 'Assistente', 'Coordenador', 'Estagiário', 'Diretor', 'Supervisor'];
-  const setores = ['TI', 'RH', 'Financeiro', 'Comercial', 'Operações', 'Marketing', 'Administrativo', 'Jurídico'];
-  const funcoes = ['Frontend', 'Backend', 'Fullstack', 'Suporte', 'Administrativo', 'Marketing', 'Vendas', 'Contabilidade', 'Recursos Humanos'];
+  
+  const cargos = [
+    'Oficial de Justiça',
+    'Escrevente',
+    'Chefe de Setor',
+    'Motorista',
+    'Estagiário',
+    'Advogado',
+    'Analista',
+    'Desenvolvedor',
+    'Gerente',
+    'Assistente',
+    'Coordenador',
+    'Diretor',
+    'Supervisor'
+  ];
+  
+  const setores = ['TI', 'RH', 'Financeiro', 'Comercial', 'Operações', 'Marketing', 'Administrativo', 'Jurídico', 'Judiciário'];
+  const funcoes = ['Frontend', 'Backend', 'Fullstack', 'Suporte', 'Administrativo', 'Marketing', 'Vendas', 'Contabilidade', 'Recursos Humanos', 'Jurídico', 'Assessoria'];
 
   // ============================================================
-  // HANDLERS COM FORMATAÇÃO
+  // HANDLERS
   // ============================================================
   const handleChange = (campo) => (e) => {
     const valor = e.target.value;
@@ -137,9 +150,6 @@ const FormularioPessoa = ({
     return Object.keys(novosErros).length === 0;
   };
 
-  // ============================================================
-  // SUBMIT
-  // ============================================================
   const handleSubmit = (e) => {
     e.preventDefault();
     if (validarFormulario()) {
@@ -150,9 +160,6 @@ const FormularioPessoa = ({
     }
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
