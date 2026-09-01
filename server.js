@@ -48,7 +48,6 @@ app.post('/api/enviar-sms', async (req, res) => {
 
     if (logError) console.error('❌ Erro ao salvar log de SMS:', logError);
 
-    // Simula envio de SMS (ou use Twilio)
     console.log(`📱 SMS (simulado) para ${telefone}: ${mensagem}`);
 
     res.json({ success: true, message: 'SMS enviado com sucesso' });
