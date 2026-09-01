@@ -14,9 +14,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
   const [erros, setErros] = useState({});
   const [adminPrincipal, setAdminPrincipal] = useState(null);
 
-  // ============================================================
-  // BUSCAR ADMIN PRINCIPAL
-  // ============================================================
   const buscarAdminPrincipal = async () => {
     try {
       const { data, error } = await supabase
@@ -26,7 +23,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
         .limit(1);
 
       if (error) throw error;
-      
       if (data && data.length > 0) {
         setAdminPrincipal(data[0]);
         return data[0];
@@ -38,9 +34,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
     }
   };
 
-  // ============================================================
-  // VALIDAR SENHA DO ADMIN PRINCIPAL
-  // ============================================================
   const validarSenhaAdminPrincipal = async () => {
     if (!adminPrincipal) {
       const admin = await buscarAdminPrincipal();
@@ -71,9 +64,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
     return true;
   };
 
-  // ============================================================
-  // LOGIN - ADMINISTRADOR
-  // ============================================================
   const handleAdminLogin = async (e) => {
     e.preventDefault();
     if (!matricula || !senha) {
@@ -104,9 +94,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
     }
   };
 
-  // ============================================================
-  // LOGIN - FUNCIONÁRIO
-  // ============================================================
   const handleFuncionarioLogin = async (e) => {
     e.preventDefault();
     if (!matricula || !senha) {
@@ -142,9 +129,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
     }
   };
 
-  // ============================================================
-  // CADASTRAR ADMIN
-  // ============================================================
   const cadastrarAdmin = async (dados) => {
     const senhaValida = await validarSenhaAdminPrincipal();
     if (!senhaValida) return;
@@ -184,7 +168,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
       }
 
       const novoAdmin = data[0];
-
       const adminNome = adminPrincipal?.nome || 'Sistema';
       const recibo = formatarReciboCadastro(novoAdmin, 'admin', adminNome);
 
@@ -222,11 +205,8 @@ const Login = ({ onLogin, onAdminLogin }) => {
     }
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
       <div className="bg-gray-800 p-8 rounded-2xl max-w-md w-full border border-blue-500 shadow-2xl">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-blue-400">🏢 PONTO SYNC</h1>
@@ -305,7 +285,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
         ) : (
           <>
             <h2 className="text-xl font-bold text-white mb-4">🆕 Criar Administrador</h2>
-            
             <div className="mb-4">
               <label className="text-gray-400 text-sm block mb-1">
                 Senha do Administrador Principal *
@@ -322,7 +301,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
                 Apenas o administrador principal (primeiro cadastrado) pode criar novos administradores.
               </p>
             </div>
-
             <FormularioPessoa
               tipo="admin"
               dadosIniciais={{
@@ -356,6 +334,26 @@ const Login = ({ onLogin, onAdminLogin }) => {
           </>
         )}
       </div>
+
+      <footer className="mt-6 text-center">
+        <p className="text-gray-500 text-sm">
+          <span className="font-bold text-blue-400">⚡ PONTO SYNC</span>
+          <span className="mx-2 text-gray-600">|</span>
+          <span className="text-gray-400">
+            Desenvolvido por{' '}
+            <span className="font-semibold text-blue-300">Engenheiro Itamar Souza</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-purple-300">Dôra</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-pink-300">Gissélia</span>
+          </span>
+        </p>
+        <p className="text-gray-600 text-xs mt-1">
+          <span className="bg-gray-700/50 px-3 py-0.5 rounded-full">V1.0 • 2026</span>
+          <span className="mx-2 text-gray-700">•</span>
+          <span className="text-gray-500">Central de Mandados</span>
+        </p>
+      </footer>
     </div>
   );
 };
