@@ -5,7 +5,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 
-// Configuração de ambiente
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,15 +13,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 10000;
 
-// ============================================================
-// MIDDLEWARE
-// ============================================================
 app.use(cors());
 app.use(express.json());
 
-// ============================================================
-// SUPABASE
-// ============================================================
+// Supabase
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
 
@@ -37,13 +31,11 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // ROTAS DA API
 // ============================================================
 
-// Rota para enviar SMS via Twilio
 app.post('/api/enviar-sms', async (req, res) => {
   const { telefone, mensagem, funcionarioId, matricula, tipo } = req.body;
 
   try {
-    // Salva log no Supabase
-    const { data: logData, error: logError } = await supabase
+    const { error: logError } = await supabase
       .from('sms_logs')
       .insert({
         funcionario_id: funcionarioId,
@@ -52,31 +44,12 @@ app.post('/api/enviar-sms', async (req, res) => {
         telefone: telefone,
         mensagem: mensagem,
         status: 'enviado'
-      })
-      .select();
-
-    if (logError) {
-      console.error('❌ Erro ao salvar log de SMS:', logError);
-    }
-
-    // Se tiver Twilio configurado, envia SMS real
-    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-      const twilio = await import('twilio');
-      const twilioClient = twilio.default(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
-
-      const result = await twilioClient.messages.create({
-        body: mensagem,
-        to: telefone,
-        from: process.env.TWILIO_PHONE_NUMBER
       });
 
-      console.log(`✅ SMS enviado para ${telefone}: ${result.sid}`);
-    } else {
-      console.log(`📱 SMS (simulado) para ${telefone}: ${mensagem}`);
-    }
+    if (logError) console.error('❌ Erro ao salvar log de SMS:', logError);
+
+    // Simula envio de SMS (ou use Twilio)
+    console.log(`📱 SMS (simulado) para ${telefone}: ${mensagem}`);
 
     res.json({ success: true, message: 'SMS enviado com sucesso' });
   } catch (error) {
@@ -85,7 +58,6 @@ app.post('/api/enviar-sms', async (req, res) => {
   }
 });
 
-// Rota para registrar ponto
 app.post('/api/registrar-ponto', async (req, res) => {
   const { funcionario_id, matricula, tipo, lat, lng, codigo } = req.body;
 
@@ -115,7 +87,6 @@ app.post('/api/registrar-ponto', async (req, res) => {
   }
 });
 
-// Rota para buscar funcionário por matrícula
 app.get('/api/funcionario/:matricula', async (req, res) => {
   const { matricula } = req.params;
 
@@ -137,7 +108,6 @@ app.get('/api/funcionario/:matricula', async (req, res) => {
   }
 });
 
-// Rota para listar funcionários
 app.get('/api/funcionarios', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -153,7 +123,6 @@ app.get('/api/funcionarios', async (req, res) => {
   }
 });
 
-// Rota para cadastrar funcionário
 app.post('/api/funcionarios', async (req, res) => {
   const funcionario = req.body;
 
@@ -177,7 +146,6 @@ app.post('/api/funcionarios', async (req, res) => {
   }
 });
 
-// Rota para buscar registros de ponto de um funcionário
 app.get('/api/registros/:funcionario_id', async (req, res) => {
   const { funcionario_id } = req.params;
   const { limite = 50 } = req.query;
@@ -199,22 +167,19 @@ app.get('/api/registros/:funcionario_id', async (req, res) => {
 });
 
 // ============================================================
-// SERVE ARQUIVOS ESTÁTICOS (React)
+// SERVE ARQUIVOS ESTÁTICOS
 // ============================================================
 
-// Serve arquivos estáticos da pasta dist
 const distPath = path.join(__dirname, 'dist');
 console.log(`📂 Servindo arquivos estáticos de: ${distPath}`);
 
 app.use(express.static(distPath));
 
-// Fallback para React Router (SPA)
+// Fallback para SPA
 app.get('*', (req, res) => {
-  // Se a requisição for para uma API, retorna 404
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Rota não encontrada' });
   }
-  // Caso contrário, serve o index.html do React
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
@@ -222,7 +187,7 @@ app.get('*', (req, res) => {
 // INICIALIZAÇÃO
 // ============================================================
 app.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 Servidor ORION PONTO PRO rodando na porta ${port}`);
+  console.log(`🚀 Servidor rodando na porta ${port}`);
   console.log(`📅 Data/Hora: ${new Date().toLocaleString('pt-BR')}`);
   console.log(`📂 Pasta estática: ${distPath}`);
 });
