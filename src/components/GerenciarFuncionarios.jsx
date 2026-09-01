@@ -13,9 +13,6 @@ const GerenciarFuncionarios = () => {
   const [erros, setErros] = useState({});
   const [admin, setAdmin] = useState(null);
 
-  // ============================================================
-  // CARGOS (COM OS NOVOS)
-  // ============================================================
   const cargos = [
     'Oficial de Justiça',
     'Escrevente',
@@ -206,7 +203,6 @@ const GerenciarFuncionarios = () => {
         </button>
       </div>
 
-      {/* Filtros */}
       <div className="flex flex-wrap gap-2 mb-4">
         <select
           value={filtros.cargo}
@@ -240,7 +236,6 @@ const GerenciarFuncionarios = () => {
         </button>
       </div>
 
-      {/* Lista */}
       {funcionarios.length === 0 ? (
         <div className="bg-gray-800 p-8 rounded-lg text-center">
           <p className="text-gray-400">Nenhum funcionário cadastrado</p>
@@ -292,7 +287,6 @@ const GerenciarFuncionarios = () => {
         </div>
       )}
 
-      {/* Modal de Cadastro */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -309,6 +303,24 @@ const GerenciarFuncionarios = () => {
           </div>
         </div>
       )}
+
+      {/* CRÉDITOS */}
+      <footer className="mt-8 pt-4 border-t border-gray-700 text-center">
+        <p className="text-gray-500 text-sm">
+          <span className="font-bold text-blue-400">⚡ PONTO SYNC</span>
+          <span className="mx-2 text-gray-600">|</span>
+          <span className="text-gray-400">
+            Desenvolvido por{' '}
+            <span className="font-semibold text-blue-300">Engenheiro Itamar Souza</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-purple-300">Dôra</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-pink-300">Gisselia</span>
+          </span>
+          <span className="mx-2 text-gray-700">•</span>
+          <span className="text-gray-500 text-xs">V1.0 • 2026</span>
+        </p>
+      </footer>
     </div>
   );
 };
