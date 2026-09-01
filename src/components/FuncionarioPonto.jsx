@@ -325,7 +325,7 @@ const FuncionarioPonto = () => {
                 </div>
               </div>
               <p className={`text-center text-sm mt-2 ${saldoAcumulado >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                Saldo acumulado: {saldoAcumulado >= 0 ? '+' : ''}{saldoAcumulado || 0}h
+                Saldo acumulado: {saldoAcumulado >= 0 ? '+' : ''}${saldoAcumulado || 0}h
               </p>
             </div>
           )}
@@ -377,6 +377,23 @@ const FuncionarioPonto = () => {
           📍 {localizacao.lat.toFixed(6)}, {localizacao.lng.toFixed(6)}
         </p>
       )}
+
+      {/* CRÉDITOS */}
+      <footer className="mt-6 pt-4 border-t border-gray-700 text-center">
+        <p className="text-gray-500 text-xs">
+          <span className="font-bold text-blue-400 text-sm">⚡ PONTO SYNC</span>
+          <span className="mx-2 text-gray-600">|</span>
+          <span className="text-gray-400">
+            <span className="font-semibold text-blue-300">Engenheiro Itamar Souza</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-purple-300">Dôra</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-pink-300">Gisselia</span>
+          </span>
+          <span className="mx-2 text-gray-700">•</span>
+          <span className="text-gray-500">V1.0 • 2026</span>
+        </p>
+      </footer>
     </div>
   );
 };
