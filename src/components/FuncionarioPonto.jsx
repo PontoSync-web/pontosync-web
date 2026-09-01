@@ -388,7 +388,7 @@ const FuncionarioPonto = () => {
             <span className="mx-1 text-gray-500">/</span>
             <span className="font-semibold text-purple-300">Dôra</span>
             <span className="mx-1 text-gray-500">/</span>
-            <span className="font-semibold text-pink-300">Gisselia</span>
+            <span className="font-semibold text-pink-300">Gissélia</span>
           </span>
           <span className="mx-2 text-gray-700">•</span>
           <span className="text-gray-500">V1.0 • 2026</span>
