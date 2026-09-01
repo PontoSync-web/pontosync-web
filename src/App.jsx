@@ -34,7 +34,7 @@ const App = () => {
         {!user ? (
           <Login onLogin={handleLogin} onAdminLogin={handleAdminLogin} />
         ) : (
-          <div className="min-h-screen bg-gray-900">
+          <div className="min-h-screen bg-gray-900 flex flex-col">
             <header className="bg-gray-800 p-4 flex justify-between items-center shadow-lg">
               <h1 className="text-xl font-bold text-blue-400">
                 🏢 {isAdmin ? 'PONTO SYNC - Admin' : 'PONTO SYNC'}
@@ -52,7 +52,7 @@ const App = () => {
               </div>
             </header>
 
-            <div className="p-4">
+            <div className="flex-1 p-4">
               {isAdmin ? (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
                   <a href="/admin" className="bg-gray-800 hover:bg-gray-700 p-3 rounded-lg text-center transition">
@@ -80,19 +80,52 @@ const App = () => {
               )}
 
               <Routes>
-                {/* Rotas Admin */}
                 <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/admin/funcionarios" element={<GerenciarFuncionarios />} />
                 <Route path="/admin/relatorios" element={<Relatorios isAdmin={true} />} />
                 <Route path="/admin/faltas" element={<GerenciarFaltas />} />
-
-                {/* Rotas Funcionário */}
                 <Route path="/ponto" element={<FuncionarioPonto />} />
                 <Route path="/ponto/relatorios" element={<Relatorios isAdmin={false} />} />
-
                 <Route path="/" element={<Navigate to={isAdmin ? "/admin" : "/ponto"} />} />
               </Routes>
             </div>
+
+            {/* ============================================================
+                RODAPÉ COM CRÉDITOS
+                ============================================================ */}
+            <footer className="bg-gray-800 border-t border-gray-700 py-4 px-6 text-center">
+              <div className="max-w-4xl mx-auto">
+                <p className="text-gray-400 text-sm">
+                  <span className="font-bold text-blue-400 text-base tracking-wide">
+                    ⚡ PONTO SYNC
+                  </span>
+                  <span className="mx-2 text-gray-600">|</span>
+                  <span className="text-gray-500">
+                    Desenvolvido por{' '}
+                    <span className="font-semibold text-blue-300 hover:text-blue-400 transition-colors duration-300">
+                      Engenheiro Itamar Souza
+                    </span>
+                    <span className="mx-1 text-gray-600">/</span>
+                    <span className="font-semibold text-purple-300 hover:text-purple-400 transition-colors duration-300">
+                      Dôra
+                    </span>
+                    <span className="mx-1 text-gray-600">/</span>
+                    <span className="font-semibold text-pink-300 hover:text-pink-400 transition-colors duration-300">
+                      Gissélia
+                    </span>
+                  </span>
+                </p>
+                <p className="text-gray-600 text-xs mt-1">
+                  <span className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 px-3 py-0.5 rounded-full">
+                    V1.0 • 2026
+                  </span>
+                  <span className="mx-2 text-gray-700">•</span>
+                  <span className="text-gray-500">
+                    Central de Mandados • Bater Ponto 06:00 - 20:00
+                  </span>
+                </p>
+              </div>
+            </footer>
           </div>
         )}
       </BrowserRouter>
