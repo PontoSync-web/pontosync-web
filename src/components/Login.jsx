@@ -1,130 +1,83 @@
-import React, { useState } from 'react';
+ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { 
-  validarCPF, 
-  formatarCPF, 
-  validarTelefone, 
-  formatarTelefone, 
-  validarEmail, 
-  validarSenha,
-  validarCamposObrigatorios 
-} from '../utils/validators';
+import FormularioPessoa from './FormularioPessoa';
+import { enviarSMS, formatarReciboCadastro } from '../lib/sms';
 
 const Login = ({ onLogin, onAdminLogin }) => {
   const [isAdmin, setIsAdmin] = useState(true);
-  const [email, setEmail] = useState('');
+  const [matricula, setMatricula] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [showCadastroAdmin, setShowCadastroAdmin] = useState(false);
-  const [novoAdmin, setNovoAdmin] = useState({
-    nome: '',
-    cpf: '',
-    email: '',
-    senha: '',
-    telefone: ''
-  });
+  const [senhaAdminPrincipal, setSenhaAdminPrincipal] = useState('');
   const [erros, setErros] = useState({});
+  const [adminPrincipal, setAdminPrincipal] = useState(null);
 
   // ============================================================
-  // VALIDAÇÃO DO FORMULÁRIO DE CADASTRO
+  // BUSCAR ADMIN PRINCIPAL
   // ============================================================
-  const validarFormularioAdmin = () => {
-    const novosErros = {};
+  const buscarAdminPrincipal = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('administradores')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(1);
 
-    // Campos obrigatórios
-    const obrigatorios = ['nome', 'cpf', 'email', 'senha'];
-    const camposValidos = validarCamposObrigatorios(novoAdmin, obrigatorios);
-    if (!camposValidos.valida) {
-      novosErros[camposValidos.campo] = 'Campo obrigatório';
-    }
-
-    // Valida CPF
-    if (novoAdmin.cpf && !validarCPF(novoAdmin.cpf)) {
-      novosErros.cpf = 'CPF inválido. Use o formato 000.000.000-00 ou apenas números.';
-    }
-
-    // Valida e-mail
-    if (novoAdmin.email && !validarEmail(novoAdmin.email)) {
-      novosErros.email = 'E-mail inválido. Exemplo: usuario@dominio.com';
-    }
-
-    // Valida senha
-    if (novoAdmin.senha) {
-      const senhaValida = validarSenha(novoAdmin.senha);
-      if (!senhaValida.valida) {
-        novosErros.senha = senhaValida.mensagem;
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setAdminPrincipal(data[0]);
+        return data[0];
       }
+      return null;
+    } catch (error) {
+      console.error('❌ Erro ao buscar admin principal:', error);
+      return null;
     }
-
-    // Valida telefone (opcional)
-    if (novoAdmin.telefone && !validarTelefone(novoAdmin.telefone)) {
-      novosErros.telefone = 'Telefone inválido. Use o formato (71) 99999-9999 ou apenas números.';
-    }
-
-    setErros(novosErros);
-    return Object.keys(novosErros).length === 0;
   };
 
   // ============================================================
-  // HANDLERS COM FORMATAÇÃO AUTOMÁTICA
+  // VALIDAR SENHA DO ADMIN PRINCIPAL
   // ============================================================
-  const handleCPFChange = (e) => {
-    const valor = e.target.value;
-    const limpo = valor.replace(/\D/g, '');
-    if (limpo.length <= 11) {
-      setNovoAdmin({ ...novoAdmin, cpf: formatarCPF(limpo) });
-      // Limpa erro do CPF enquanto digita
-      if (erros.cpf) {
-        setErros({ ...erros, cpf: '' });
+  const validarSenhaAdminPrincipal = async () => {
+    if (!adminPrincipal) {
+      const admin = await buscarAdminPrincipal();
+      if (!admin) {
+        toast.error('Nenhum administrador cadastrado. Crie o primeiro.');
+        return false;
       }
+      setAdminPrincipal(admin);
     }
-  };
 
-  const handleTelefoneChange = (e) => {
-    const valor = e.target.value;
-    const limpo = valor.replace(/\D/g, '');
-    if (limpo.length <= 11) {
-      setNovoAdmin({ ...novoAdmin, telefone: formatarTelefone(limpo) });
-      if (erros.telefone) {
-        setErros({ ...erros, telefone: '' });
-      }
+    if (!senhaAdminPrincipal) {
+      toast.error('Digite a senha do administrador principal');
+      return false;
     }
-  };
 
-  const handleEmailChange = (e) => {
-    const valor = e.target.value;
-    setNovoAdmin({ ...novoAdmin, email: valor });
-    if (erros.email) {
-      setErros({ ...erros, email: '' });
-    }
-  };
+    const { data, error } = await supabase
+      .from('administradores')
+      .select('*')
+      .eq('id', adminPrincipal.id)
+      .eq('senha', senhaAdminPrincipal)
+      .single();
 
-  const handleSenhaChange = (e) => {
-    const valor = e.target.value;
-    setNovoAdmin({ ...novoAdmin, senha: valor });
-    if (erros.senha) {
-      setErros({ ...erros, senha: '' });
+    if (error || !data) {
+      toast.error('Senha do administrador principal incorreta');
+      return false;
     }
-  };
 
-  const handleNomeChange = (e) => {
-    const valor = e.target.value;
-    setNovoAdmin({ ...novoAdmin, nome: valor });
-    if (erros.nome) {
-      setErros({ ...erros, nome: '' });
-    }
+    return true;
   };
 
   // ============================================================
-  // CADASTRAR ADMINISTRADOR (COM VALIDAÇÃO)
+  // LOGIN - ADMINISTRADOR
   // ============================================================
-  const cadastrarAdmin = async (e) => {
+  const handleAdminLogin = async (e) => {
     e.preventDefault();
-
-    // Valida formulário
-    if (!validarFormularioAdmin()) {
-      toast.error('Corrija os campos destacados');
+    if (!matricula || !senha) {
+      toast.error('Preencha matrícula e senha');
       return;
     }
 
@@ -132,75 +85,138 @@ const Login = ({ onLogin, onAdminLogin }) => {
     try {
       const { data, error } = await supabase
         .from('administradores')
-        .insert([novoAdmin])
-        .select();
+        .select('*')
+        .eq('matricula', matricula.toUpperCase())
+        .eq('senha', senha)
+        .single();
 
-      if (error) {
-        if (error.code === '23505') {
-          toast.error('CPF ou e-mail já cadastrado');
-        } else {
-          throw error;
-        }
+      if (error || !data) {
+        toast.error('Matrícula ou senha inválidos');
         return;
       }
 
-      toast.success('✅ Administrador criado com sucesso! Faça login.');
-      setShowCadastroAdmin(false);
-      setNovoAdmin({ nome: '', cpf: '', email: '', senha: '', telefone: '' });
-      setErros({});
+      toast.success(`Bem-vindo, ${data.nome}!`);
+      onAdminLogin(data);
     } catch (error) {
-      console.error('❌ Erro ao criar administrador:', error);
-      toast.error('Erro ao criar administrador: ' + error.message);
+      toast.error('Erro ao fazer login');
     } finally {
       setLoading(false);
     }
   };
 
   // ============================================================
-  // LOGIN (COM VALIDAÇÃO BÁSICA)
+  // LOGIN - FUNCIONÁRIO
   // ============================================================
-  const handleLogin = async (e) => {
+  const handleFuncionarioLogin = async (e) => {
     e.preventDefault();
-    if (!email || !senha) {
-      toast.error('Preencha todos os campos');
+    if (!matricula || !senha) {
+      toast.error('Preencha matrícula e senha');
       return;
     }
 
     setLoading(true);
     try {
-      if (isAdmin) {
-        const { data, error } = await supabase
-          .from('administradores')
-          .select('*')
-          .eq('email', email)
-          .eq('senha', senha)
-          .single();
+      const { data, error } = await supabase
+        .from('funcionarios')
+        .select('*')
+        .eq('matricula', matricula.toUpperCase())
+        .eq('senha', senha)
+        .single();
 
-        if (error || !data) {
-          toast.error('Credenciais inválidas');
-          return;
-        }
-
-        toast.success(`Bem-vindo, ${data.nome}!`);
-        onAdminLogin(data);
-      } else {
-        const { data, error } = await supabase
-          .from('funcionarios')
-          .select('*')
-          .eq('matricula', email.toUpperCase())
-          .eq('senha', senha)
-          .single();
-
-        if (error || !data) {
-          toast.error('Matrícula ou senha inválidos');
-          return;
-        }
-
-        toast.success(`Bem-vindo, ${data.nome}!`);
-        onLogin(data);
+      if (error || !data) {
+        toast.error('Matrícula ou senha inválidos');
+        return;
       }
+
+      if (data.status !== 'ativo') {
+        toast.error('Funcionário inativo. Contate o administrador.');
+        return;
+      }
+
+      toast.success(`Bem-vindo, ${data.nome}!`);
+      onLogin(data);
     } catch (error) {
       toast.error('Erro ao fazer login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================
+  // CADASTRAR ADMIN
+  // ============================================================
+  const cadastrarAdmin = async (dados) => {
+    const senhaValida = await validarSenhaAdminPrincipal();
+    if (!senhaValida) return;
+
+    setLoading(true);
+    try {
+      const adminData = {
+        nome: dados.nome,
+        cpf: dados.cpf,
+        email: dados.email,
+        senha: dados.senha,
+        telefone: dados.telefone,
+        cargo: dados.cargo,
+        setor: dados.setor,
+        funcao: dados.funcao,
+        matricula: dados.matricula || `ADMIN-${Date.now()}`,
+        turno: dados.turno,
+        carga_horaria: dados.carga_horaria,
+        foto_url: dados.foto_url || null,
+        observacao: dados.observacao || null,
+        periodo_ferias_inicio: dados.periodo_ferias_inicio || null,
+        periodo_ferias_fim: dados.periodo_ferias_fim || null
+      };
+
+      const { data, error } = await supabase
+        .from('administradores')
+        .insert([adminData])
+        .select();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Matrícula, CPF ou e-mail já cadastrado');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      const novoAdmin = data[0];
+
+      const adminNome = adminPrincipal?.nome || 'Sistema';
+      const recibo = formatarReciboCadastro(novoAdmin, 'admin', adminNome);
+
+      if (novoAdmin.telefone) {
+        await enviarSMS(
+          novoAdmin.telefone,
+          recibo,
+          novoAdmin.matricula,
+          novoAdmin.id,
+          'admin',
+          novoAdmin.nome
+        );
+      }
+
+      if (adminPrincipal?.telefone) {
+        await enviarSMS(
+          adminPrincipal.telefone,
+          recibo,
+          novoAdmin.matricula,
+          adminPrincipal.id,
+          'admin',
+          adminPrincipal.nome
+        );
+      }
+
+      toast.success('✅ Administrador criado com sucesso! SMS enviado.');
+      setShowCadastroAdmin(false);
+      setSenhaAdminPrincipal('');
+      setErros({});
+    } catch (error) {
+      console.error('❌ Erro:', error);
+      toast.error('Erro ao criar administrador: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -214,12 +230,12 @@ const Login = ({ onLogin, onAdminLogin }) => {
       <div className="bg-gray-800 p-8 rounded-2xl max-w-md w-full border border-blue-500 shadow-2xl">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-blue-400">🏢 PONTO SYNC</h1>
-          <p className="text-gray-400 text-sm mt-1">Sistema de Ponto Eletrônico</p>
+          <p className="text-gray-400 text-sm mt-1">Central de Mandados</p>
+          <p className="text-gray-500 text-xs">Bater Ponto • 06:00 às 20:00</p>
         </div>
 
         {!showCadastroAdmin ? (
           <>
-            {/* Tabs */}
             <div className="flex bg-gray-700 rounded-lg p-1 mb-6">
               <button
                 className={`flex-1 py-2 rounded-lg font-semibold transition ${
@@ -239,29 +255,35 @@ const Login = ({ onLogin, onAdminLogin }) => {
               </button>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <input
-                type={isAdmin ? 'email' : 'text'}
-                placeholder={isAdmin ? 'E-mail' : 'Matrícula (ex: ORION-0001)'}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              />
-              <input
-                type="password"
-                placeholder="Senha"
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              />
+            <form onSubmit={isAdmin ? handleAdminLogin : handleFuncionarioLogin} className="space-y-4">
+              <div>
+                <label className="text-gray-400 text-sm block mb-1">Matrícula</label>
+                <input
+                  type="text"
+                  placeholder="Digite sua matrícula"
+                  value={matricula}
+                  onChange={(e) => setMatricula(e.target.value.toUpperCase())}
+                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-sm block mb-1">Senha</label>
+                <input
+                  type="password"
+                  placeholder="Digite sua senha"
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-semibold transition disabled:opacity-50"
               >
-                {loading ? '⏳ Entrando...' : '🔑 Entrar'}
+                {loading ? '⏳ Entrando...' : `🔑 Entrar como ${isAdmin ? 'Administrador' : 'Funcionário'}`}
               </button>
             </form>
 
@@ -273,106 +295,64 @@ const Login = ({ onLogin, onAdminLogin }) => {
                 🆕 Criar Primeiro Administrador
               </button>
             )}
+
+            {!isAdmin && (
+              <p className="text-gray-500 text-xs text-center mt-4">
+                Matrícula padrão: ORION-0001 | Senha: 123456
+              </p>
+            )}
           </>
         ) : (
           <>
             <h2 className="text-xl font-bold text-white mb-4">🆕 Criar Administrador</h2>
-            <form onSubmit={cadastrarAdmin} className="space-y-4">
-              {/* Nome */}
-              <div>
-                <input
-                  type="text"
-                  placeholder="Nome completo *"
-                  value={novoAdmin.nome}
-                  onChange={handleNomeChange}
-                  className={`w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 ${
-                    erros.nome ? 'border-2 border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'
-                  }`}
-                />
-                {erros.nome && <p className="text-red-400 text-xs mt-1">{erros.nome}</p>}
-              </div>
+            
+            <div className="mb-4">
+              <label className="text-gray-400 text-sm block mb-1">
+                Senha do Administrador Principal *
+              </label>
+              <input
+                type="password"
+                value={senhaAdminPrincipal}
+                onChange={(e) => setSenhaAdminPrincipal(e.target.value)}
+                placeholder="Digite a senha do admin principal"
+                className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              <p className="text-gray-500 text-xs mt-1">
+                Apenas o administrador principal (primeiro cadastrado) pode criar novos administradores.
+              </p>
+            </div>
 
-              {/* CPF com formatação automática */}
-              <div>
-                <input
-                  type="text"
-                  placeholder="CPF (apenas números) *"
-                  value={novoAdmin.cpf}
-                  onChange={handleCPFChange}
-                  maxLength={14}
-                  className={`w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 ${
-                    erros.cpf ? 'border-2 border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'
-                  }`}
-                />
-                {erros.cpf && <p className="text-red-400 text-xs mt-1">{erros.cpf}</p>}
-              </div>
-
-              {/* E-mail */}
-              <div>
-                <input
-                  type="email"
-                  placeholder="E-mail *"
-                  value={novoAdmin.email}
-                  onChange={handleEmailChange}
-                  className={`w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 ${
-                    erros.email ? 'border-2 border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'
-                  }`}
-                />
-                {erros.email && <p className="text-red-400 text-xs mt-1">{erros.email}</p>}
-              </div>
-
-              {/* Senha com validação em tempo real */}
-              <div>
-                <input
-                  type="password"
-                  placeholder="Senha (mín. 6 caracteres, letras e números) *"
-                  value={novoAdmin.senha}
-                  onChange={handleSenhaChange}
-                  className={`w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 ${
-                    erros.senha ? 'border-2 border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'
-                  }`}
-                />
-                {erros.senha && <p className="text-red-400 text-xs mt-1">{erros.senha}</p>}
-                {novoAdmin.senha && !erros.senha && (
-                  <p className="text-green-400 text-xs mt-1">✅ Senha válida</p>
-                )}
-              </div>
-
-              {/* Telefone com formatação automática */}
-              <div>
-                <input
-                  type="text"
-                  placeholder="Telefone (opcional)"
-                  value={novoAdmin.telefone}
-                  onChange={handleTelefoneChange}
-                  maxLength={15}
-                  className={`w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 ${
-                    erros.telefone ? 'border-2 border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'
-                  }`}
-                />
-                {erros.telefone && <p className="text-red-400 text-xs mt-1">{erros.telefone}</p>}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-semibold transition disabled:opacity-50"
-                >
-                  {loading ? '⏳ Criando...' : '✅ Criar'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCadastroAdmin(false);
-                    setErros({});
-                  }}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 py-2 rounded-lg font-semibold transition"
-                >
-                  Voltar
-                </button>
-              </div>
-            </form>
+            <FormularioPessoa
+              tipo="admin"
+              dadosIniciais={{
+                nome: '',
+                foto: null,
+                foto_url: '',
+                cargo: '',
+                setor: '',
+                funcao: '',
+                matricula: `ADMIN-${Date.now()}`,
+                turno: 'matutino',
+                carga_horaria: '8',
+                telefone: '',
+                cpf: '',
+                email: '',
+                senha: '',
+                periodo_ferias_inicio: '',
+                periodo_ferias_fim: '',
+                observacao: ''
+              }}
+              onSubmit={cadastrarAdmin}
+              onCancel={() => {
+                setShowCadastroAdmin(false);
+                setSenhaAdminPrincipal('');
+                setErros({});
+              }}
+              loading={loading}
+              erros={erros}
+              setErros={setErros}
+            />
           </>
         )}
       </div>
