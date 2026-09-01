@@ -1,45 +1,72 @@
-import React, { useState, useEffect } from 'react';
-import { supabase, gerarMatricula, buscarEnderecoPorCEP } from '../lib/supabase';
+ import React, { useState, useEffect } from 'react';
+import { supabase, gerarMatricula } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import FormularioPessoa from './FormularioPessoa';
+import { enviarSMS, formatarReciboCadastro } from '../lib/sms';
 
 const GerenciarFuncionarios = () => {
   const [funcionarios, setFuncionarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [filtros, setFiltros] = useState({ cargo: '', funcao: '', departamento: '' });
-  const [form, setForm] = useState({
-    nome: '',
-    cpf: '',
-    rg: '',
-    telefone_celular: '',
-    cep: '',
-    cidade: '',
-    uf: '',
-    matricula: gerarMatricula(),
-    data_admissao: new Date().toISOString().split('T')[0],
-    cargo: '',
-    funcao: '',
-    departamento: '',
-    horario_entrada: '08:00',
-    horario_saida: '17:00',
-    senha: '123456',
-    foto_url: ''
-  });
+  const [editando, setEditando] = useState(null);
+  const [filtros, setFiltros] = useState({ cargo: '', setor: '', funcao: '' });
+  const [erros, setErros] = useState({});
+  const [admin, setAdmin] = useState(null);
+
+  // ============================================================
+  // CARGOS (COM OS NOVOS)
+  // ============================================================
+  const cargos = [
+    'Oficial de Justiça',
+    'Escrevente',
+    'Chefe de Setor',
+    'Motorista',
+    'Estagiário',
+    'Advogado',
+    'Analista',
+    'Desenvolvedor',
+    'Gerente',
+    'Assistente',
+    'Coordenador',
+    'Diretor',
+    'Supervisor'
+  ];
+  
+  const setores = ['TI', 'RH', 'Financeiro', 'Comercial', 'Operações', 'Marketing', 'Administrativo', 'Jurídico', 'Judiciário'];
+  const funcoes = ['Frontend', 'Backend', 'Fullstack', 'Suporte', 'Administrativo', 'Marketing', 'Vendas', 'Contabilidade', 'Recursos Humanos', 'Jurídico', 'Assessoria'];
 
   useEffect(() => {
     carregarFuncionarios();
+    buscarAdmin();
   }, []);
+
+  const buscarAdmin = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('administradores')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setAdmin(data[0]);
+        localStorage.setItem('adminId', data[0].id);
+        localStorage.setItem('adminNome', data[0].nome);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar admin:', error);
+    }
+  };
 
   const carregarFuncionarios = async () => {
     try {
       let query = supabase.from('funcionarios').select('*');
-      
       if (filtros.cargo) query = query.eq('cargo', filtros.cargo);
+      if (filtros.setor) query = query.eq('setor', filtros.setor);
       if (filtros.funcao) query = query.eq('funcao', filtros.funcao);
-      if (filtros.departamento) query = query.eq('departamento', filtros.departamento);
 
       const { data, error } = await query.order('created_at', { ascending: false });
-      
       if (error) throw error;
       setFuncionarios(data || []);
     } catch (error) {
@@ -49,40 +76,21 @@ const GerenciarFuncionarios = () => {
     }
   };
 
-  const buscarCEP = async (cep) => {
-    const cepLimpo = cep.replace(/\D/g, '');
-    if (cepLimpo.length !== 8) return;
-    
+  const cadastrarFuncionario = async (dados) => {
     try {
-      const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
-      const data = await response.json();
-      if (!data.erro) {
-        setForm(prev => ({
-          ...prev,
-          cidade: data.localidade,
-          uf: data.uf,
-          cep: cepLimpo
-        }));
-        toast.success('CEP encontrado!');
-      }
-    } catch {
-      toast.error('Erro ao buscar CEP');
-    }
-  };
+      const funcionarioData = {
+        ...dados,
+        matricula: dados.matricula || gerarMatricula(),
+        data_admissao: dados.data_admissao || new Date().toISOString().split('T')[0],
+        horario_entrada: dados.turno === 'matutino' ? '08:00' : dados.turno === 'vespertino' ? '14:00' : '22:00',
+        horario_saida: dados.turno === 'matutino' ? '17:00' : dados.turno === 'vespertino' ? '22:00' : '06:00',
+        senha: dados.senha || '123456',
+        status: 'ativo'
+      };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validações
-    if (!form.nome || !form.cpf || !form.telefone_celular) {
-      toast.error('Preencha os campos obrigatórios');
-      return;
-    }
-
-    try {
       const { data, error } = await supabase
         .from('funcionarios')
-        .insert([form])
+        .insert([funcionarioData])
         .select();
 
       if (error) {
@@ -94,41 +102,66 @@ const GerenciarFuncionarios = () => {
         return;
       }
 
-      toast.success(`✅ Funcionário ${form.nome} cadastrado com sucesso!`);
+      const novoFuncionario = data[0];
+      const adminNome = admin?.nome || 'Sistema';
+      const recibo = formatarReciboCadastro(novoFuncionario, 'funcionario', adminNome);
+
+      if (novoFuncionario.telefone) {
+        await enviarSMS(
+          novoFuncionario.telefone,
+          recibo,
+          novoFuncionario.matricula,
+          novoFuncionario.id,
+          'funcionario',
+          novoFuncionario.nome
+        );
+      }
+
+      if (admin?.telefone) {
+        await enviarSMS(
+          admin.telefone,
+          recibo,
+          novoFuncionario.matricula,
+          admin.id,
+          'admin',
+          admin.nome
+        );
+      }
+
+      toast.success(`✅ Funcionário ${dados.nome} cadastrado! SMS enviado.`);
       setShowModal(false);
-      setForm({
-        nome: '',
-        cpf: '',
-        rg: '',
-        telefone_celular: '',
-        cep: '',
-        cidade: '',
-        uf: '',
-        matricula: gerarMatricula(),
-        data_admissao: new Date().toISOString().split('T')[0],
-        cargo: '',
-        funcao: '',
-        departamento: '',
-        horario_entrada: '08:00',
-        horario_saida: '17:00',
-        senha: '123456',
-        foto_url: ''
-      });
+      setEditando(null);
+      setErros({});
       carregarFuncionarios();
     } catch (error) {
       toast.error('Erro ao cadastrar funcionário');
     }
   };
 
+  const editarFuncionario = async (dados) => {
+    try {
+      const { data, error } = await supabase
+        .from('funcionarios')
+        .update(dados)
+        .eq('id', editando.id)
+        .select();
+
+      if (error) throw error;
+
+      toast.success(`✅ Funcionário ${dados.nome} atualizado!`);
+      setShowModal(false);
+      setEditando(null);
+      setErros({});
+      carregarFuncionarios();
+    } catch (error) {
+      toast.error('Erro ao atualizar funcionário');
+    }
+  };
+
   const excluirFuncionario = async (id, nome) => {
     if (!confirm(`Deseja excluir ${nome}?`)) return;
-    
     try {
-      const { error } = await supabase
-        .from('funcionarios')
-        .delete()
-        .eq('id', id);
-      
+      const { error } = await supabase.from('funcionarios').delete().eq('id', id);
       if (error) throw error;
       toast.success(`Funcionário ${nome} excluído`);
       carregarFuncionarios();
@@ -137,9 +170,25 @@ const GerenciarFuncionarios = () => {
     }
   };
 
-  const cargos = ['Analista', 'Desenvolvedor', 'Gerente', 'Assistente', 'Coordenador', 'Estagiário'];
-  const funcoes = ['Frontend', 'Backend', 'Fullstack', 'Suporte', 'Administrativo', 'Marketing'];
-  const departamentos = ['TI', 'RH', 'Financeiro', 'Comercial', 'Operações', 'Marketing'];
+  const dadosIniciais = {
+    nome: '',
+    foto: null,
+    foto_url: '',
+    cargo: '',
+    setor: '',
+    funcao: '',
+    matricula: gerarMatricula(),
+    turno: 'matutino',
+    carga_horaria: '8',
+    telefone: '',
+    cpf: '',
+    email: '',
+    data_admissao: new Date().toISOString().split('T')[0],
+    periodo_ferias_inicio: '',
+    periodo_ferias_fim: '',
+    observacao: '',
+    senha: '123456'
+  };
 
   if (loading) {
     return <div className="text-center text-blue-400 py-10">⏳ Carregando funcionários...</div>;
@@ -150,7 +199,7 @@ const GerenciarFuncionarios = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-blue-400">👥 Funcionários</h1>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => { setEditando(null); setShowModal(true); }}
           className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition"
         >
           + Novo Funcionário
@@ -168,6 +217,14 @@ const GerenciarFuncionarios = () => {
           {cargos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select
+          value={filtros.setor}
+          onChange={(e) => setFiltros({ ...filtros, setor: e.target.value })}
+          className="bg-gray-700 text-white px-3 py-1 rounded-lg text-sm"
+        >
+          <option value="">Todos setores</option>
+          {setores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select
           value={filtros.funcao}
           onChange={(e) => setFiltros({ ...filtros, funcao: e.target.value })}
           className="bg-gray-700 text-white px-3 py-1 rounded-lg text-sm"
@@ -175,16 +232,8 @@ const GerenciarFuncionarios = () => {
           <option value="">Todas funções</option>
           {funcoes.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
-        <select
-          value={filtros.departamento}
-          onChange={(e) => setFiltros({ ...filtros, departamento: e.target.value })}
-          className="bg-gray-700 text-white px-3 py-1 rounded-lg text-sm"
-        >
-          <option value="">Todos departamentos</option>
-          {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
         <button
-          onClick={() => setFiltros({ cargo: '', funcao: '', departamento: '' })}
+          onClick={() => setFiltros({ cargo: '', setor: '', funcao: '' })}
           className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded-lg text-sm transition"
         >
           Limpar
@@ -206,6 +255,7 @@ const GerenciarFuncionarios = () => {
                 <th className="p-3 text-left">Matrícula</th>
                 <th className="p-3 text-left">Nome</th>
                 <th className="p-3 text-left">Cargo</th>
+                <th className="p-3 text-left">Setor</th>
                 <th className="p-3 text-left">Função</th>
                 <th className="p-3 text-left">Telefone</th>
                 <th className="p-3 text-left">Ações</th>
@@ -224,8 +274,9 @@ const GerenciarFuncionarios = () => {
                   <td className="p-3 text-blue-400 font-mono text-xs">{func.matricula}</td>
                   <td className="p-3 text-white">{func.nome}</td>
                   <td className="p-3 text-gray-300">{func.cargo}</td>
+                  <td className="p-3 text-gray-300">{func.setor}</td>
                   <td className="p-3 text-gray-300">{func.funcao}</td>
-                  <td className="p-3 text-gray-300">{func.telefone_celular}</td>
+                  <td className="p-3 text-gray-300">{func.telefone}</td>
                   <td className="p-3">
                     <button
                       onClick={() => excluirFuncionario(func.id, func.nome)}
@@ -245,151 +296,16 @@ const GerenciarFuncionarios = () => {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-blue-400 mb-4">📝 Novo Funcionário</h2>
-            
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="Nome completo *"
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="CPF (apenas números)"
-                  value={form.cpf}
-                  onChange={(e) => setForm({ ...form, cpf: e.target.value.replace(/\D/g, '') })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="RG"
-                  value={form.rg}
-                  onChange={(e) => setForm({ ...form, rg: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Celular (com DDD)"
-                  value={form.telefone_celular}
-                  onChange={(e) => setForm({ ...form, telefone_celular: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="CEP (apenas números)"
-                  value={form.cep}
-                  onChange={(e) => {
-                    const cep = e.target.value.replace(/\D/g, '');
-                    setForm({ ...form, cep });
-                    if (cep.length === 8) buscarCEP(cep);
-                  }}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Cidade"
-                  value={form.cidade}
-                  onChange={(e) => setForm({ ...form, cidade: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="UF"
-                  value={form.uf}
-                  onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase() })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Matrícula (automática)"
-                  value={form.matricula}
-                  onChange={(e) => setForm({ ...form, matricula: e.target.value.toUpperCase() })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="date"
-                  placeholder="Data Admissão"
-                  value={form.data_admissao}
-                  onChange={(e) => setForm({ ...form, data_admissao: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <select
-                  value={form.cargo}
-                  onChange={(e) => setForm({ ...form, cargo: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Selecione o cargo</option>
-                  {cargos.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <select
-                  value={form.funcao}
-                  onChange={(e) => setForm({ ...form, funcao: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Selecione a função</option>
-                  {funcoes.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-                <select
-                  value={form.departamento}
-                  onChange={(e) => setForm({ ...form, departamento: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Selecione o departamento</option>
-                  {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-                <input
-                  type="time"
-                  value={form.horario_entrada}
-                  onChange={(e) => setForm({ ...form, horario_entrada: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="time"
-                  value={form.horario_saida}
-                  onChange={(e) => setForm({ ...form, horario_saida: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Senha (padrão: 123456)"
-                  value={form.senha}
-                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="URL da foto (opcional)"
-                  value={form.foto_url}
-                  onChange={(e) => setForm({ ...form, foto_url: e.target.value })}
-                  className="bg-gray-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex gap-3 mt-4">
-                <button
-                  type="submit"
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-semibold transition"
-                >
-                  ✅ Cadastrar Funcionário
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 py-2 rounded-lg font-semibold transition"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
+            <h2 className="text-2xl font-bold text-blue-400 mb-4">
+              {editando ? '✏️ Editar Funcionário' : '📝 Novo Funcionário'}
+            </h2>
+            <FormularioPessoa
+              tipo="funcionario"
+              dadosIniciais={editando || dadosIniciais}
+              onSubmit={editando ? editarFuncionario : cadastrarFuncionario}
+              onCancel={() => { setShowModal(false); setEditando(null); }}
+              loading={false}
+            />
           </div>
         </div>
       )}
