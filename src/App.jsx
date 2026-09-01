@@ -37,7 +37,7 @@ const App = () => {
           <div className="min-h-screen bg-gray-900">
             <header className="bg-gray-800 p-4 flex justify-between items-center shadow-lg">
               <h1 className="text-xl font-bold text-blue-400">
-                🏢 {isAdmin ? 'ORION PONTO PRO - Admin' : 'ORION PONTO PRO'}
+                🏢 {isAdmin ? 'PONTO SYNC - Admin' : 'PONTO SYNC'}
               </h1>
               <div className="flex items-center gap-4">
                 <span className="text-gray-400 text-sm">
