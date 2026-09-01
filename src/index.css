@@ -1,4 +1,4 @@
-@tailwind base;
+ @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -28,4 +28,77 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
+}
+
+/* ============================================================
+   ESTILO DESTACADO PARA OS CRÉDITOS
+   ============================================================ */
+.creditos-destaque {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(168, 85, 247, 0.1));
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 8px 16px;
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+.creditos-destaque:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(168, 85, 247, 0.2));
+  border-color: rgba(59, 130, 246, 0.4);
+  transform: scale(1.02);
+}
+
+.creditos-nome {
+  font-weight: 600;
+  transition: color 0.3s ease;
+}
+
+.creditos-nome-souza {
+  color: #60a5fa;
+}
+
+.creditos-nome-souza:hover {
+  color: #93bbfc;
+}
+
+.creditos-nome-dora {
+  color: #c084fc;
+}
+
+.creditos-nome-dora:hover {
+  color: #d8b4fe;
+}
+
+.creditos-nome-gisselia {
+  color: #f472b6;
+}
+
+.creditos-nome-gisselia:hover {
+  color: #f9a8d4;
+}
+
+.creditos-versao {
+  background: linear-gradient(to right, rgba(59, 130, 246, 0.15), rgba(168, 85, 247, 0.15));
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #94a3b8;
+  border: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+/* Animações */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.creditos-animado {
+  animation: fadeInUp 0.6s ease-out;
 }
