@@ -1,18 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  server: {
-    proxy: {
-      '/api': 'http://localhost:10000'
-    }
-  },
+  root: process.cwd(),
   build: {
     outDir: 'dist',
     sourcemap: false,
     minify: 'terser',
     rollupOptions: {
+      input: path.resolve(__dirname, 'index.html'),
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
@@ -20,6 +18,11 @@ export default defineConfig({
           charts: ['recharts']
         }
       }
+    }
+  },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:10000'
     }
   },
   preview: {
