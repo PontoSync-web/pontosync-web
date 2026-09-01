@@ -31,6 +31,25 @@ const AdminDashboard = () => {
   const [loadingCadastro, setLoadingCadastro] = useState(false);
   const [admin, setAdmin] = useState(null);
 
+  // ============================================================
+  // CARGOS (COM OS NOVOS)
+  // ============================================================
+  const cargos = [
+    'Oficial de Justiça',
+    'Escrevente',
+    'Chefe de Setor',
+    'Motorista',
+    'Estagiário',
+    'Advogado',
+    'Analista',
+    'Desenvolvedor',
+    'Gerente',
+    'Assistente',
+    'Coordenador',
+    'Diretor',
+    'Supervisor'
+  ];
+
   useEffect(() => {
     carregarDashboard();
     inscreverFeed();
@@ -138,9 +157,9 @@ const AdminDashboard = () => {
         .from('funcionarios')
         .select('cargo, funcao, setor, carga_horaria');
 
-      const cargos = {};
+      const cargosCount = {};
       funcionarios?.forEach(f => {
-        cargos[f.cargo] = (cargos[f.cargo] || 0) + 1;
+        cargosCount[f.cargo] = (cargosCount[f.cargo] || 0) + 1;
       });
 
       const { data: bancoHoras, error: bancoError } = await supabase
@@ -183,7 +202,7 @@ const AdminDashboard = () => {
         faltas: 0,
         horasExtras: 0,
         frequenciaMensal: gerarDadosFrequencia(),
-        distribuicaoCargos: Object.entries(cargos).map(([name, value]) => ({ name, value })),
+        distribuicaoCargos: Object.entries(cargosCount).map(([name, value]) => ({ name, value })),
         absenteismo: gerarDadosAbsenteismo(),
         totalBancoHoras: Math.round(totalBancoHoras * 100) / 100,
         totalExcedentes: Math.round(totalExcedentes * 100) / 100,
