@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -27,12 +27,11 @@ const Relatorios = ({ isAdmin }) => {
             matricula,
             cargo,
             funcao,
-            departamento
+            setor
           )
         `)
         .order('timestamp', { ascending: false });
 
-      // Se for funcionário, filtra pelo ID dele (usando dados do localStorage/context)
       if (!isAdmin) {
         const funcionarioId = localStorage.getItem('funcionarioId');
         if (funcionarioId) {
@@ -46,7 +45,6 @@ const Relatorios = ({ isAdmin }) => {
 
       setRegistros(data || []);
       
-      // Calcula resumo
       const entradas = data?.filter(r => r.tipo === 'entrada') || [];
       const saidas = data?.filter(r => r.tipo === 'saida') || [];
       
@@ -77,7 +75,7 @@ const Relatorios = ({ isAdmin }) => {
             matricula,
             cargo,
             funcao,
-            departamento
+            setor
           )
         `)
         .order('timestamp', { ascending: false });
@@ -113,7 +111,7 @@ const Relatorios = ({ isAdmin }) => {
       return;
     }
 
-    const headers = ['Data', 'Hora', 'Funcionário', 'Matrícula', 'Tipo', 'Cargo', 'Função'];
+    const headers = ['Data', 'Hora', 'Funcionário', 'Matrícula', 'Tipo', 'Cargo', 'Setor', 'Função'];
     const linhas = registros.map(r => [
       format(parseISO(r.timestamp), 'dd/MM/yyyy'),
       format(parseISO(r.timestamp), 'HH:mm:ss'),
@@ -121,6 +119,7 @@ const Relatorios = ({ isAdmin }) => {
       r.matricula || 'N/A',
       r.tipo.toUpperCase(),
       r.funcionarios?.cargo || 'N/A',
+      r.funcionarios?.setor || 'N/A',
       r.funcionarios?.funcao || 'N/A'
     ]);
 
@@ -161,7 +160,6 @@ const Relatorios = ({ isAdmin }) => {
         </button>
       </div>
 
-      {/* Resumo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-gray-800 p-4 rounded-lg text-center">
           <p className="text-gray-400 text-sm">Total de Registros</p>
@@ -177,7 +175,6 @@ const Relatorios = ({ isAdmin }) => {
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="bg-gray-800 p-4 rounded-lg mb-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <input
@@ -210,7 +207,6 @@ const Relatorios = ({ isAdmin }) => {
         </div>
       </div>
 
-      {/* Tabela */}
       {registros.length === 0 ? (
         <div className="bg-gray-800 p-8 rounded-lg text-center">
           <p className="text-gray-400">Nenhum registro encontrado</p>
@@ -225,6 +221,7 @@ const Relatorios = ({ isAdmin }) => {
                 <th className="p-3 text-left">Matrícula</th>
                 <th className="p-3 text-left">Tipo</th>
                 <th className="p-3 text-left">Cargo</th>
+                <th className="p-3 text-left">Setor</th>
                 <th className="p-3 text-left">Função</th>
               </tr>
             </thead>
@@ -253,6 +250,9 @@ const Relatorios = ({ isAdmin }) => {
                     {registro.funcionarios?.cargo || 'N/A'}
                   </td>
                   <td className="p-3 text-gray-300">
+                    {registro.funcionarios?.setor || 'N/A'}
+                  </td>
+                  <td className="p-3 text-gray-300">
                     {registro.funcionarios?.funcao || 'N/A'}
                   </td>
                 </tr>
@@ -261,6 +261,24 @@ const Relatorios = ({ isAdmin }) => {
           </table>
         </div>
       )}
+
+      {/* CRÉDITOS */}
+      <footer className="mt-8 pt-4 border-t border-gray-700 text-center">
+        <p className="text-gray-500 text-sm">
+          <span className="font-bold text-blue-400">⚡ PONTO SYNC</span>
+          <span className="mx-2 text-gray-600">|</span>
+          <span className="text-gray-400">
+            Desenvolvido por{' '}
+            <span className="font-semibold text-blue-300">Engenheiro Itamar Souza</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-purple-300">Dôra</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-pink-300">Gissélia</span>
+          </span>
+          <span className="mx-2 text-gray-700">•</span>
+          <span className="text-gray-500 text-xs">V1.0 • 2026</span>
+        </p>
+      </footer>
     </div>
   );
 };
