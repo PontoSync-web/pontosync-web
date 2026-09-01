@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -24,16 +24,14 @@ const GerenciarFaltas = () => {
     try {
       setLoading(true);
 
-      // Carrega funcionários
       const { data: funcData, error: funcError } = await supabase
         .from('funcionarios')
-        .select('id, nome, matricula')
+        .select('id, nome, matricula, cargo')
         .order('nome');
 
       if (funcError) throw funcError;
       setFuncionarios(funcData || []);
 
-      // Carrega faltas
       const { data: faltaData, error: faltaError } = await supabase
         .from('faltas')
         .select(`
@@ -41,7 +39,8 @@ const GerenciarFaltas = () => {
           funcionarios (
             nome,
             matricula,
-            cargo
+            cargo,
+            setor
           )
         `)
         .order('data', { ascending: false });
@@ -178,7 +177,6 @@ const GerenciarFaltas = () => {
         </button>
       </div>
 
-      {/* Resumo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-gray-800 p-4 rounded-lg text-center">
           <p className="text-gray-400 text-sm">Total de Faltas</p>
@@ -198,7 +196,6 @@ const GerenciarFaltas = () => {
         </div>
       </div>
 
-      {/* Lista de faltas */}
       {faltas.length === 0 ? (
         <div className="bg-gray-800 p-8 rounded-lg text-center">
           <p className="text-gray-400">Nenhuma falta registrada</p>
@@ -211,6 +208,7 @@ const GerenciarFaltas = () => {
                 <th className="p-3 text-left">Data</th>
                 <th className="p-3 text-left">Funcionário</th>
                 <th className="p-3 text-left">Matrícula</th>
+                <th className="p-3 text-left">Cargo</th>
                 <th className="p-3 text-left">Motivo</th>
                 <th className="p-3 text-left">Status</th>
                 <th className="p-3 text-left">Ações</th>
@@ -227,6 +225,9 @@ const GerenciarFaltas = () => {
                   </td>
                   <td className="p-3 text-blue-400 font-mono">
                     {falta.funcionarios?.matricula || 'N/A'}
+                  </td>
+                  <td className="p-3 text-gray-300">
+                    {falta.funcionarios?.cargo || 'N/A'}
                   </td>
                   <td className="p-3 text-gray-300">
                     {falta.motivo || '-'}
@@ -283,7 +284,6 @@ const GerenciarFaltas = () => {
         </div>
       )}
 
-      {/* Modal de Nova Falta */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full">
@@ -299,7 +299,7 @@ const GerenciarFaltas = () => {
                 <option value="">Selecione o funcionário</option>
                 {funcionarios.map(f => (
                   <option key={f.id} value={f.id}>
-                    {f.nome} - {f.matricula}
+                    {f.nome} - {f.matricula} ({f.cargo})
                   </option>
                 ))}
               </select>
@@ -347,6 +347,24 @@ const GerenciarFaltas = () => {
           </div>
         </div>
       )}
+
+      {/* CRÉDITOS */}
+      <footer className="mt-8 pt-4 border-t border-gray-700 text-center">
+        <p className="text-gray-500 text-sm">
+          <span className="font-bold text-blue-400">⚡ PONTO SYNC</span>
+          <span className="mx-2 text-gray-600">|</span>
+          <span className="text-gray-400">
+            Desenvolvido por{' '}
+            <span className="font-semibold text-blue-300">Engenheiro Itamar Souza</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-purple-300">Dôra</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="font-semibold text-pink-300">Gissélia</span>
+          </span>
+          <span className="mx-2 text-gray-700">•</span>
+          <span className="text-gray-500 text-xs">V1.0 • 2026</span>
+        </p>
+      </footer>
     </div>
   );
 };
