@@ -26,7 +26,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
     setLoading(true);
     try {
       if (isAdmin) {
-        // Login administrador
         const { data, error } = await supabase
           .from('administradores')
           .select('*')
@@ -42,7 +41,6 @@ const Login = ({ onLogin, onAdminLogin }) => {
         toast.success(`Bem-vindo, ${data.nome}!`);
         onAdminLogin(data);
       } else {
-        // Login funcionário
         const { data, error } = await supabase
           .from('funcionarios')
           .select('*')
@@ -102,13 +100,12 @@ const Login = ({ onLogin, onAdminLogin }) => {
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-gray-800 p-8 rounded-2xl max-w-md w-full border border-blue-500 shadow-2xl">
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-blue-400">🏢 ORION PONTO PRO</h1>
+          <h1 className="text-3xl font-bold text-blue-400">🏢 PONTO SYNC</h1>
           <p className="text-gray-400 text-sm mt-1">Sistema de Ponto Eletrônico</p>
         </div>
 
         {!showCadastroAdmin ? (
           <>
-            {/* Tabs */}
             <div className="flex bg-gray-700 rounded-lg p-1 mb-6">
               <button
                 className={`flex-1 py-2 rounded-lg font-semibold transition ${
